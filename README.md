@@ -10,6 +10,15 @@ You can use the `make` command to run all tests:
 make test
 ```
 
+## How to Add a New Problem
+
+```bash
+# Usage:
+#     go run scripts/new_problem.go <problem_id> <problem_name>
+# Example:
+go run scripts/new_problem.go 2 add_two_numbers
+```
+
 ## Directory Structure
 
 - `leetcode/`: LeetCode problem solutions

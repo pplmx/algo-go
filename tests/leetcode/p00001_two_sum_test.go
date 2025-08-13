@@ -1,9 +1,10 @@
 package leetcode_test
 
 import (
-	"github.com/pplmx/algo-go/leetcode"
 	"reflect"
 	"testing"
+
+	"github.com/pplmx/algo-go/leetcode"
 )
 
 func TestTwoSum(t *testing.T) {
