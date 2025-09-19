@@ -1,0 +1,88 @@
+package core
+
+import (
+	"github.com/pplmx/algo-go/llm/transformer/config"
+	"math"
+)
+
+// 交叉熵损失
+type CrossEntropyLoss struct {
+	Config config.TransformerConfig
+}
+
+func NewCrossEntropyLoss(cfg config.TransformerConfig) *CrossEntropyLoss {
+	return &CrossEntropyLoss{Config: cfg}
+}
+
+func (c *CrossEntropyLoss) Forward(logits Matrix, targets [][]int) float64 {
+	batchSize := len(targets)
+	seqLen := len(targets[0])
+
+	probs := c.softmax(logits)
+
+	loss := 0.0
+	for i := 0; i < batchSize; i++ {
+		for j := 0; j < seqLen; j++ {
+			targetIdx := targets[i][j]
+			logitIdx := i*seqLen*len(probs[0]) + j*c.Config.VocabSize + targetIdx
+			row := logitIdx / len(probs[0])
+			col := logitIdx % len(probs[0])
+			prob := probs[row][col]
+			loss += -math.Log(prob + 1e-10)
+		}
+	}
+
+	return loss / float64(batchSize*seqLen)
+}
+
+func (c *CrossEntropyLoss) Backward(logits Matrix, targets [][]int) Matrix {
+	probs := c.softmax(logits)
+	batchSize := len(targets)
+	seqLen := len(targets[0])
+
+	grad := make(Matrix, len(probs))
+	for i := range grad {
+		grad[i] = make([]float64, len(probs[i]))
+		copy(grad[i], probs[i])
+	}
+
+	for i := 0; i < batchSize; i++ {
+		for j := 0; j < seqLen; j++ {
+			targetIdx := targets[i][j]
+			logitIdx := i*seqLen*len(probs[0]) + j*c.Config.VocabSize + targetIdx
+			row := logitIdx / len(probs[0])
+			col := logitIdx % len(probs[0])
+			grad[row][col] -= 1.0
+		}
+	}
+
+	return ScaleMatrix(grad, 1.0/float64(batchSize*seqLen))
+}
+
+func (c *CrossEntropyLoss) softmax(x Matrix) Matrix {
+	result := make(Matrix, len(x))
+	for i := range x {
+		result[i] = make([]float64, len(x[i]))
+
+		// 减去最大值以提高数值稳定性
+		maxVal := x[i][0]
+		for j := 1; j < len(x[i]); j++ {
+			if x[i][j] > maxVal {
+				maxVal = x[i][j]
+			}
+		}
+
+		// 计算指数和
+		sum := 0.0
+		for j := range x[i] {
+			result[i][j] = math.Exp(x[i][j] - maxVal)
+			sum += result[i][j]
+		}
+
+		// 应用 softmax
+		for j := range result[i] {
+			result[i][j] /= sum
+		}
+	}
+	return result
+}
