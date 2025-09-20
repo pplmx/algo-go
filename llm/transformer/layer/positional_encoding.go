@@ -51,3 +51,9 @@ func (pe *PositionalEncoding) Forward(input core.Matrix) core.Matrix {
 	}
 	return result
 }
+
+func (pe *PositionalEncoding) Backward(gradOutput core.Matrix) core.Matrix {
+	// PositionalEncoding has no trainable parameters and its forward pass is an element-wise addition.
+	// So, the gradient with respect to the input is simply the gradOutput.
+	return gradOutput
+}

@@ -13,6 +13,11 @@ type TransformerEncoderLayer struct {
 	AttnResidual *ResidualConnection
 	FFN          *FeedForwardNetwork
 	FFNResidual  *ResidualConnection
+
+	lastX          core.Matrix
+	lastAttnOutput core.Matrix
+	lastX1         core.Matrix
+	lastFFNOutput  core.Matrix
 }
 
 func NewTransformerEncoderLayer(cfg config.TransformerConfig) *TransformerEncoderLayer {
@@ -33,14 +38,19 @@ func (t *TransformerEncoderLayer) SetTraining(training bool) {
 }
 
 func (t *TransformerEncoderLayer) Forward(x core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
+	t.lastX = x
+
 	// 自注意力层
 	attnOutput, attnWeights := t.SelfAttn.Forward(x, x, x, mask)
+	t.lastAttnOutput = attnOutput
 
 	// 残差连接和层归一化 (Add & Norm)
 	x1 := t.AttnResidual.Forward(x, attnOutput)
+	t.lastX1 = x1
 
 	// 前馈网络
 	ffnOutput := t.FFN.Forward(x1)
+	t.lastFFNOutput = ffnOutput
 
 	// 第二个残差连接和层归一化 (Add & Norm)
 	y := t.FFNResidual.Forward(x1, ffnOutput)
@@ -48,11 +58,58 @@ func (t *TransformerEncoderLayer) Forward(x core.Matrix, mask core.Matrix) (core
 	return y, attnWeights
 }
 
+func (t *TransformerEncoderLayer) Backward(gradOutput core.Matrix) core.Matrix {
+	// 1. Backward through FFNResidual
+	gradX1_from_FFNResidual, _ := t.FFNResidual.Backward(gradOutput)
+
+	// 2. Backward through FFN
+	gradX1_from_FFN := t.FFN.Backward(gradX1_from_FFNResidual)
+
+	// 3. Backward through AttnResidual
+	gradX_from_AttnResidual, gradAttnOutput := t.AttnResidual.Backward(core.AddMatrices(gradX1_from_FFNResidual, gradX1_from_FFN))
+
+	// 4. Backward through SelfAttn
+	gradX_from_SelfAttn, _, _ := t.SelfAttn.Backward(gradAttnOutput)
+
+	// Combine gradients for x
+	gradX := core.AddMatrices(gradX_from_AttnResidual, gradX_from_SelfAttn)
+
+	return gradX
+}
+
+func (t *TransformerEncoderLayer) GetParameters() []core.Matrix {
+	params := []core.Matrix{}
+	params = append(params, t.SelfAttn.GetParameters()...)
+	params = append(params, t.AttnResidual.GetParameters()...)
+	params = append(params, t.FFN.GetParameters()...)
+	params = append(params, t.FFNResidual.GetParameters()...)
+	return params
+}
+
+func (t *TransformerEncoderLayer) GetGradients() []core.Matrix {
+	grads := []core.Matrix{}
+	grads = append(grads, t.SelfAttn.GetGradients()...)
+	grads = append(grads, t.AttnResidual.GetGradients()...)
+	grads = append(grads, t.FFN.GetGradients()...)
+	grads = append(grads, t.FFNResidual.GetGradients()...)
+	return grads
+}
+
+func (t *TransformerEncoderLayer) ZeroGradients() {
+	t.SelfAttn.ZeroGradients()
+	t.AttnResidual.ZeroGradients()
+	t.FFN.ZeroGradients()
+	t.FFNResidual.ZeroGradients()
+}
+
 // TransformerEncoder 代表了由 N 个 TransformerEncoderLayer 堆叠而成的整个 Encoder 模块
 type TransformerEncoder struct {
 	Config config.TransformerConfig
 	PosEnc *PositionalEncoding
 	Layers []*TransformerEncoderLayer
+
+	lastEncoded core.Matrix
+	lastOutputs []core.Matrix // Stores output of each layer for backward pass
 }
 
 func NewTransformerEncoder(cfg config.TransformerConfig, numLayers int) *TransformerEncoder {
@@ -65,6 +122,7 @@ func NewTransformerEncoder(cfg config.TransformerConfig, numLayers int) *Transfo
 		Config: cfg,
 		PosEnc: NewPositionalEncoding(cfg.MaxSeqLen, cfg.DModel),
 		Layers: layers,
+		lastOutputs: make([]core.Matrix, numLayers), // Initialize lastOutputs
 	}
 }
 
@@ -77,6 +135,7 @@ func (t *TransformerEncoder) SetTraining(training bool) {
 func (t *TransformerEncoder) Forward(x core.Matrix, mask core.Matrix) (core.Matrix, [][]core.Matrix) {
 	// 添加位置编码
 	encoded := t.PosEnc.Forward(x)
+	t.lastEncoded = encoded
 
 	allAttnWeights := make([][]core.Matrix, len(t.Layers))
 	output := encoded
@@ -86,7 +145,52 @@ func (t *TransformerEncoder) Forward(x core.Matrix, mask core.Matrix) (core.Matr
 		var attnWeights []core.Matrix
 		output, attnWeights = layer.Forward(output, mask)
 		allAttnWeights[i] = attnWeights
+		// Store output of each layer for backward pass
+		t.lastOutputs[i] = output
 	}
 
 	return output, allAttnWeights
+}
+
+func (t *TransformerEncoder) Backward(gradOutput core.Matrix) core.Matrix {
+	// Initialize gradInput with zeros
+	gradInput := core.Zeros(len(gradOutput), len(gradOutput[0]))
+
+	// 1. Backward through layers in reverse order
+	currentGrad := gradOutput
+	for i := len(t.Layers) - 1; i >= 0; i-- {
+		layer := t.Layers[i]
+		// The input to the current layer's forward pass was t.lastOutputs[i-1] or t.lastEncoded
+		// We need to pass the correct input to the layer's backward method if it needs it
+		// For now, assuming layer.Backward only needs gradOutput
+		currentGrad = layer.Backward(currentGrad)
+	}
+
+	// 2. Backward through PosEnc
+	gradInput = t.PosEnc.Backward(currentGrad)
+
+	return gradInput
+}
+
+func (t *TransformerEncoder) GetParameters() []core.Matrix {
+	params := []core.Matrix{}
+	// PosEnc has no trainable parameters
+	for _, layer := range t.Layers {
+		params = append(params, layer.GetParameters()...)
+	}
+	return params
+}
+
+func (t *TransformerEncoder) GetGradients() []core.Matrix {
+	grads := []core.Matrix{}
+	for _, layer := range t.Layers {
+		grads = append(grads, layer.GetGradients()...)
+	}
+	return grads
+}
+
+func (t *TransformerEncoder) ZeroGradients() {
+	for _, layer := range t.Layers {
+		layer.ZeroGradients()
+	}
 }

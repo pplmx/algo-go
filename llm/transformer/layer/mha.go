@@ -13,6 +13,15 @@ type MultiHeadAttention struct {
 	WV        *LinearLayer
 	WO        *LinearLayer
 	Attention *core.ScaledDotProductAttention
+
+	lastQ          core.Matrix
+	lastK          core.Matrix
+	lastV          core.Matrix
+	lastQHeads     []core.Matrix
+	lastKHeads     []core.Matrix
+	lastVHeads     []core.Matrix
+	lastOutputs    []core.Matrix
+	lastConcatOutput core.Matrix
 }
 
 func NewMultiHeadAttention(cfg config.TransformerConfig) *MultiHeadAttention {
@@ -34,15 +43,14 @@ func (m *MultiHeadAttention) SetTraining(training bool) {
 }
 
 func (m *MultiHeadAttention) Forward(qInput, kInput, vInput core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
-	// 线性变换得到 Q, K, V
-	q := m.WQ.Forward(qInput)
-	k := m.WK.Forward(kInput)
-	v := m.WV.Forward(vInput)
+	m.lastQ = m.WQ.Forward(qInput)
+	m.lastK = m.WK.Forward(kInput)
+	m.lastV = m.WV.Forward(vInput)
 
 	// 分割多头
-	qHeads := m.splitHeads(q)
-	kHeads := m.splitHeads(k)
-	vHeads := m.splitHeads(v)
+	qHeads := m.splitHeads(m.lastQ)
+	kHeads := m.splitHeads(m.lastK)
+	vHeads := m.splitHeads(m.lastV)
 
 	// 计算每个头的注意力
 	outputs := make([]core.Matrix, m.Config.NumHeads)
@@ -51,9 +59,11 @@ func (m *MultiHeadAttention) Forward(qInput, kInput, vInput core.Matrix, mask co
 	for i := 0; i < m.Config.NumHeads; i++ {
 		outputs[i], weights[i] = m.Attention.Forward(qHeads[i], kHeads[i], vHeads[i], mask)
 	}
+	m.lastOutputs = outputs
 
 	// 合并多头输出
 	concatOutput := m.concatHeads(outputs)
+	m.lastConcatOutput = concatOutput
 
 	// 最终线性变换
 	output := m.WO.Forward(concatOutput)
@@ -94,4 +104,97 @@ func (m *MultiHeadAttention) concatHeads(heads []core.Matrix) core.Matrix {
 	}
 
 	return concat
+}
+
+func (m *MultiHeadAttention) Backward(gradOutput core.Matrix) (gradQInput, gradKInput, gradVInput core.Matrix) {
+	// 1. Backward through WO
+	gradConcatOutput := m.WO.Backward(gradOutput)
+
+	// 2. Backward through concatHeads
+	gradOutputs := m.unconcatHeads(gradConcatOutput)
+
+	// 3. Backward through Attention for each head
+	gradQHeads := make([]core.Matrix, m.Config.NumHeads)
+	gradKHeads := make([]core.Matrix, m.Config.NumHeads)
+	gradVHeads := make([]core.Matrix, m.Config.NumHeads)
+
+	for i := 0; i < m.Config.NumHeads; i++ {
+		// Pass the gradOutputs[i] to the Attention.Backward
+		// The Attention.Backward returns gradQuery, gradKey, gradValue for that head
+		gradQHeads[i], gradKHeads[i], gradVHeads[i] = m.Attention.Backward(gradOutputs[i])
+	}
+
+	// 4. Backward through splitHeads
+	gradQ := m.unsplitHeads(gradQHeads, len(m.lastQ[0]))
+	gradK := m.unsplitHeads(gradKHeads, len(m.lastK[0]))
+	gradV := m.unsplitHeads(gradVHeads, len(m.lastV[0]))
+
+	// 5. Backward through WQ, WK, WV
+	gradQInput = m.WQ.Backward(gradQ)
+	gradKInput = m.WK.Backward(gradK)
+	gradVInput = m.WV.Backward(gradV)
+
+	return gradQInput, gradKInput, gradVInput
+}
+
+func (m *MultiHeadAttention) GetParameters() []core.Matrix {
+	params := []core.Matrix{}
+	params = append(params, m.WQ.GetParameters()...)
+	params = append(params, m.WK.GetParameters()...)
+	params = append(params, m.WV.GetParameters()...)
+	params = append(params, m.WO.GetParameters()...)
+	// ScaledDotProductAttention has no trainable parameters
+	return params
+}
+
+func (m *MultiHeadAttention) GetGradients() []core.Matrix {
+	grads := []core.Matrix{}
+	grads = append(grads, m.WQ.GetGradients()...)
+	grads = append(grads, m.WK.GetGradients()...)
+	grads = append(grads, m.WV.GetGradients()...)
+	grads = append(grads, m.WO.GetGradients()...)
+	return grads
+}
+
+func (m *MultiHeadAttention) ZeroGradients() {
+	m.WQ.ZeroGradients()
+	m.WK.ZeroGradients()
+	m.WV.ZeroGradients()
+	m.WO.ZeroGradients()
+}
+
+// unconcatHeads performs the reverse operation of concatHeads
+func (m *MultiHeadAttention) unconcatHeads(gradConcatOutput core.Matrix) []core.Matrix {
+	seqLen := len(gradConcatOutput)
+	dVPerHead := m.Config.DV / m.Config.NumHeads
+	gradOutputs := make([]core.Matrix, m.Config.NumHeads)
+
+	for i := 0; i < m.Config.NumHeads; i++ {
+		gradOutputs[i] = make(core.Matrix, seqLen)
+		for r := 0; r < seqLen; r++ {
+			gradOutputs[i][r] = make([]float64, dVPerHead)
+			copy(gradOutputs[i][r], gradConcatOutput[r][i*dVPerHead:(i+1)*dVPerHead])
+		}
+	}
+	return gradOutputs
+}
+
+// unsplitHeads performs the reverse operation of splitHeads
+func (m *MultiHeadAttention) unsplitHeads(gradHeads []core.Matrix, originalDim int) core.Matrix {
+	seqLen := len(gradHeads[0])
+	dHead := len(gradHeads[0][0]) // dKPerHead or dVPerHead
+	gradInput := make(core.Matrix, seqLen)
+	for r := 0; r < seqLen; r++ {
+		gradInput[r] = make([]float64, originalDim)
+	}
+
+	for i := 0; i < m.Config.NumHeads; i++ {
+		for r := 0; r < seqLen; r++ {
+			startCol := i * dHead
+			for c := 0; c < dHead; c++ {
+				gradInput[r][startCol+c] += gradHeads[i][r][c]
+			}
+		}
+	}
+	return gradInput
 }

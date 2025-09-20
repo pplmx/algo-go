@@ -6,6 +6,10 @@ import "github.com/pplmx/algo-go/llm/transformer/core"
 type ResidualConnection struct {
 	Norm    *core.LayerNorm
 	Dropout *core.Dropout
+
+	lastX            core.Matrix
+	lastSublayerOutput core.Matrix
+	lastAddedOutput  core.Matrix
 }
 
 func NewResidualConnection(dModel int, dropoutRate float64) *ResidualConnection {
@@ -20,9 +24,47 @@ func (r *ResidualConnection) SetTraining(training bool) {
 }
 
 func (r *ResidualConnection) Forward(x, sublayer core.Matrix) core.Matrix {
+	r.lastX = x
+	r.lastSublayerOutput = sublayer
+
 	// 应用子层并添加 dropout
-	subOutput := r.Dropout.Forward(sublayer)
+	droppedSubOutput := r.Dropout.Forward(sublayer)
 
 	// 残差连接和层归一化
-	return r.Norm.Forward(core.AddMatrices(x, subOutput))
+	addedOutput := core.AddMatrices(x, droppedSubOutput)
+	r.lastAddedOutput = addedOutput
+
+	return r.Norm.Forward(addedOutput)
+}
+
+func (r *ResidualConnection) Backward(gradOutput core.Matrix) (gradX, gradSublayer core.Matrix) {
+	// 1. Backward through LayerNorm
+	gradAddedOutput := r.Norm.Backward(gradOutput)
+
+	// 2. Backward through AddMatrices
+	// Gradients are simply passed through for addition
+	gradX = gradAddedOutput
+	gradDroppedSubOutput := gradAddedOutput
+
+	// 3. Backward through Dropout
+	gradSublayer = r.Dropout.Backward(gradDroppedSubOutput)
+
+	return gradX, gradSublayer
+}
+
+func (r *ResidualConnection) GetParameters() []core.Matrix {
+	params := []core.Matrix{}
+	params = append(params, r.Norm.GetParameters()...)
+	// Dropout has no trainable parameters
+	return params
+}
+
+func (r *ResidualConnection) GetGradients() []core.Matrix {
+	grads := []core.Matrix{}
+	grads = append(grads, r.Norm.GetGradients()...)
+	return grads
+}
+
+func (r *ResidualConnection) ZeroGradients() {
+	r.Norm.ZeroGradients()
 }

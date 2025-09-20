@@ -60,3 +60,33 @@ func ScaleMatrix(m Matrix, factor float64) Matrix {
 	}
 	return result
 }
+
+// SumRows 对矩阵的行求和，返回一个单行矩阵
+func SumRows(m Matrix) Matrix {
+	result := make(Matrix, 1)
+	result[0] = make([]float64, len(m[0]))
+	for i := range m {
+		for j := range m[i] {
+			result[0][j] += m[i][j]
+		}
+	}
+	return result
+}
+
+// Zeros 创建一个指定维度全为零的矩阵
+func Zeros(rows, cols int) Matrix {
+	result := make(Matrix, rows)
+	for i := range result {
+		result[i] = make([]float64, cols)
+	}
+	return result
+}
+
+// Sum 对一个 float64 切片的所有元素求和
+func Sum(arr []float64, offset float64) float64 {
+	s := 0.0
+	for _, v := range arr {
+		s += v + offset
+	}
+	return s
+}

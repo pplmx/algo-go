@@ -69,14 +69,20 @@ func (t *Trainer) Train(loader *DataLoader, numEpochs int) {
 			totalLoss += loss
 
 			// 反向传播
-			// grad := t.LossFunc.Backward(logits, targets)
+			// gradLoss := t.LossFunc.Backward(logits, targets)
+			// gradModelInput, _ := t.Model.Backward(gradLoss)
 
-			// 更新模型参数 (这里需要遍历模型的参数并调用 optimizer.Update)
-			// 这是一个简化的示例，实际中需要更复杂的参数管理
-			// 假设 Model 有一个 GetParameters() 方法返回所有可训练参数和对应的梯度
-			// for param, g := range t.Model.GetParameters() {
-			//    t.Optimizer.Update(param, g, m_param, v_param)
-			// }
+			// 更新模型参数
+			params := t.Model.GetParameters()
+			grads := t.Model.GetGradients()
+
+			// Zero out gradients before updating
+			t.Model.ZeroGradients()
+
+			// Update parameters
+			for i := range params {
+				t.Optimizer.Update(params[i], grads[i], nil, nil) // m and v are handled internally by optimizer
+			}
 
 			batchCount++
 		}
