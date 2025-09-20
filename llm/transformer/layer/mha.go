@@ -33,11 +33,11 @@ func (m *MultiHeadAttention) SetTraining(training bool) {
 	m.Attention.SetTraining(training)
 }
 
-func (m *MultiHeadAttention) Forward(x core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
+func (m *MultiHeadAttention) Forward(qInput, kInput, vInput core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
 	// 线性变换得到 Q, K, V
-	q := m.WQ.Forward(x)
-	k := m.WK.Forward(x)
-	v := m.WV.Forward(x)
+	q := m.WQ.Forward(qInput)
+	k := m.WK.Forward(kInput)
+	v := m.WV.Forward(vInput)
 
 	// 分割多头
 	qHeads := m.splitHeads(q)

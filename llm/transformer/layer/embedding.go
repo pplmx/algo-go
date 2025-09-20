@@ -29,3 +29,7 @@ func (e *Embedding) Forward(input [][]int) core.Matrix {
 
 	return result
 }
+
+func (e *Embedding) SetTraining(training bool) {
+	// Embedding layer does not have training-dependent behavior
+}

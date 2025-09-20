@@ -32,7 +32,7 @@ func TestMultiHeadAttention_Forward(t *testing.T) {
 	}
 
 	// 4. 执行前向传播
-	output, weights := mha.Forward(input, nil)
+	output, weights := mha.Forward(input, input, input, nil)
 
 	// 5. 验证输出维度
 	if len(output) != seqLen {

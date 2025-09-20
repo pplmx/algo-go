@@ -34,7 +34,7 @@ func (t *TransformerEncoderLayer) SetTraining(training bool) {
 
 func (t *TransformerEncoderLayer) Forward(x core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
 	// 自注意力层
-	attnOutput, attnWeights := t.SelfAttn.Forward(x, mask)
+	attnOutput, attnWeights := t.SelfAttn.Forward(x, x, x, mask)
 
 	// 残差连接和层归一化 (Add & Norm)
 	x1 := t.AttnResidual.Forward(x, attnOutput)
