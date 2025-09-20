@@ -1,8 +1,9 @@
 package core
 
 import (
-	"github.com/pplmx/algo-go/llm/transformer/config"
 	"math"
+
+	"github.com/pplmx/algo-go/llm/transformer/config"
 )
 
 // Adam 优化器
