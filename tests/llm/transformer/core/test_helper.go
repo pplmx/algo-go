@@ -1,4 +1,4 @@
-package core_test
+package core
 
 import (
 	"math"
@@ -6,8 +6,8 @@ import (
 	"github.com/pplmx/algo-go/llm/transformer/core"
 )
 
-// matricesAlmostEqual 比较两个矩阵在给定的误差范围内是否相等
-func matricesAlmostEqual(a, b core.Matrix, tolerance float64) bool {
+// MatricesAlmostEqual 比较两个矩阵在给定的误差范围内是否相等
+func MatricesAlmostEqual(a, b core.Matrix, tolerance float64) bool {
 	if len(a) != len(b) {
 		return false
 	}

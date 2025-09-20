@@ -1,4 +1,4 @@
-package core_test
+package core
 
 import (
 	"testing"
@@ -14,8 +14,8 @@ func TestScaledDotProductAttention_Forward(t *testing.T) {
 
 	// 2. 准备输入数据
 	// Q 和 K 的设计使得注意力权重会非常极端 (接近1和0)，便于验证
-	query := core.Matrix{{10}, {0}} // seq_len=2, d_k=1
-	key := core.Matrix{{10}, {0}}   // seq_len=2, d_k=1
+	query := core.Matrix{{10}, {0}}      // seq_len=2, d_k=1
+	key := core.Matrix{{10}, {0}}        // seq_len=2, d_k=1
 	value := core.Matrix{{1, 2}, {3, 4}} // seq_len=2, d_v=2
 
 	// 3. 计算预期输出
@@ -34,7 +34,7 @@ func TestScaledDotProductAttention_Forward(t *testing.T) {
 	output, _ := attn.Forward(query, key, value, nil)
 
 	// 5. 验证结果
-	if !matricesAlmostEqual(output, expectedOutput, 1e-9) {
+	if !MatricesAlmostEqual(output, expectedOutput, 1e-9) {
 		t.Errorf("Forward() output = %v, want %v", output, expectedOutput)
 	}
 }
