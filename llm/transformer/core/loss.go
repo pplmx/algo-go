@@ -23,11 +23,9 @@ func (c *CrossEntropyLoss) Forward(logits Matrix, targets [][]int) float64 {
 	loss := 0.0
 	for i := 0; i < batchSize; i++ {
 		for j := 0; j < seqLen; j++ {
+			rowIndex := i*seqLen + j
 			targetIdx := targets[i][j]
-			logitIdx := i*seqLen*len(probs[0]) + j*c.Config.VocabSize + targetIdx
-			row := logitIdx / len(probs[0])
-			col := logitIdx % len(probs[0])
-			prob := probs[row][col]
+			prob := probs[rowIndex][targetIdx]
 			loss += -math.Log(prob + 1e-10)
 		}
 	}
@@ -40,19 +38,13 @@ func (c *CrossEntropyLoss) Backward(logits Matrix, targets [][]int) Matrix {
 	batchSize := len(targets)
 	seqLen := len(targets[0])
 
-	grad := make(Matrix, len(probs))
-	for i := range grad {
-		grad[i] = make([]float64, len(probs[i]))
-		copy(grad[i], probs[i])
-	}
+	grad := probs // softmax returns a new matrix, so we can modify it in place
 
 	for i := 0; i < batchSize; i++ {
 		for j := 0; j < seqLen; j++ {
+			rowIndex := i*seqLen + j
 			targetIdx := targets[i][j]
-			logitIdx := i*seqLen*len(probs[0]) + j*c.Config.VocabSize + targetIdx
-			row := logitIdx / len(probs[0])
-			col := logitIdx % len(probs[0])
-			grad[row][col] -= 1.0
+			grad[rowIndex][targetIdx] -= 1.0
 		}
 	}
 

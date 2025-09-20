@@ -83,7 +83,7 @@ func (m *MultiHeadAttention) concatHeads(heads []core.Matrix) core.Matrix {
 	concat := make(core.Matrix, seqLen)
 
 	for i := 0; i < seqLen; i++ {
-		concat[i] = make([]float64, m.Config.DV*m.Config.NumHeads)
+		concat[i] = make([]float64, m.Config.DV)
 		idx := 0
 		for j := 0; j < m.Config.NumHeads; j++ {
 			for k := 0; k < len(heads[j][i]); k++ {
