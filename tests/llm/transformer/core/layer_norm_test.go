@@ -1,9 +1,10 @@
-package core
+package core_test
 
 import (
 	"testing"
 
 	"github.com/pplmx/algo-go/llm/transformer/core"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestLayerNorm_Forward(t *testing.T) {
@@ -30,7 +31,7 @@ func TestLayerNorm_Forward(t *testing.T) {
 	output := ln.Forward(input)
 
 	// 5. 验证结果
-	if !MatricesAlmostEqual(output, expectedOutput, 1e-9) {
+	if !helpers.MatricesAlmostEqual(output, expectedOutput, 1e-9) {
 		t.Errorf("Forward() output = %v, want %v", output, expectedOutput)
 	}
 }

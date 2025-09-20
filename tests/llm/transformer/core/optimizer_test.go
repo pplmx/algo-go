@@ -1,4 +1,4 @@
-package core
+package core_test
 
 import (
 	"math"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer/config"
 	"github.com/pplmx/algo-go/llm/transformer/core"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestAdamOptimizer_Update(t *testing.T) {
@@ -55,7 +56,7 @@ func TestAdamOptimizer_Update(t *testing.T) {
 	// For now, we will assume the internal state is updated correctly if the param is updated correctly.
 	// We can also add a GetM() and GetV() to the optimizer for testing purposes if needed.
 
-	if !MatricesAlmostEqual(param, expectedParam, 1e-9) {
+	if !helpers.MatricesAlmostEqual(param, expectedParam, 1e-9) {
 		t.Errorf("Parameter update incorrect.\nGot:  %v\nWant: %v", param, expectedParam)
 	}
 

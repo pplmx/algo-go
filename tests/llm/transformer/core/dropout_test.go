@@ -1,9 +1,10 @@
-package core
+package core_test
 
 import (
 	"testing"
 
 	"github.com/pplmx/algo-go/llm/transformer/core"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestDropout_EvalMode(t *testing.T) {
@@ -17,7 +18,7 @@ func TestDropout_EvalMode(t *testing.T) {
 	output := dropout.Forward(input)
 
 	// 4. 验证输出是否与输入完全相同
-	if !MatricesAlmostEqual(input, output, 1e-9) {
+	if !helpers.MatricesAlmostEqual(input, output, 1e-9) {
 		t.Errorf("In eval mode, dropout output should be identical to input. Got %v, want %v", output, input)
 	}
 }

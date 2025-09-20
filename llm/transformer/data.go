@@ -101,22 +101,41 @@ func (dl *DataLoader) padBatch(batch [][]int, maxLen int) [][]int {
 func (dl *DataLoader) generatePaddingMask(batch [][]int) core.Matrix {
 	batchSize := len(batch)
 	seqLen := len(batch[0])
-	mask := make(core.Matrix, batchSize*seqLen)
+	maskDim := batchSize * seqLen
+	mask := make(core.Matrix, maskDim)
 	for i := range mask {
-		mask[i] = make([]float64, batchSize*seqLen)
+		mask[i] = make([]float64, maskDim)
 	}
 
+	// Initialize mask with zeros
+	// (already done by make, but explicit for clarity)
+
+	// Apply masking for padded query tokens (rows)
 	for b := 0; b < batchSize; b++ {
 		for r := 0; r < seqLen; r++ {
-			// 如果当前 token 是填充 token，则掩盖其在注意力中的所有连接
+			// If the query token is a padding token, mask its attention to all keys
 			if batch[b][r] == dl.Dataset.Config.PadToken {
-				// 掩盖整个行，因为这个 token 不应该关注任何东西
-				for c := 0; c < seqLen; c++ {
-					mask[b*seqLen+r][b*seqLen+c] = -math.MaxFloat64 // -inf
+				queryIdx := b*seqLen + r
+				for c := 0; c < maskDim; c++ {
+					mask[queryIdx][c] = -math.MaxFloat64 // -inf
 				}
 			}
 		}
 	}
+
+	// Apply masking for padded key tokens (columns)
+	for b := 0; b < batchSize; b++ {
+		for c := 0; c < seqLen; c++ {
+			// If the key token is a padding token, mask all queries' attention to it
+			if batch[b][c] == dl.Dataset.Config.PadToken {
+				keyIdx := b*seqLen + c
+				for r := 0; r < maskDim; r++ {
+					mask[r][keyIdx] = -math.MaxFloat64 // -inf
+				}
+			}
+		}
+	}
+
 	return mask
 }
 

@@ -1,6 +1,10 @@
 package transformer
 
 import (
+	"encoding/gob"
+	"fmt"
+	"os"
+
 	"github.com/pplmx/algo-go/llm/transformer/config"
 	"github.com/pplmx/algo-go/llm/transformer/core"
 	"github.com/pplmx/algo-go/llm/transformer/layer"
@@ -107,6 +111,37 @@ func (t *TransformerModel) ZeroGradients() {
 	t.Encoder.ZeroGradients()
 	t.Decoder.ZeroGradients()
 	t.Generator.ZeroGradients()
+}
+
+// Save saves the TransformerModel to a file using gob encoding.
+func (t *TransformerModel) Save(filePath string) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	if err := encoder.Encode(t); err != nil {
+		return fmt.Errorf("failed to encode model: %w", err)
+	}
+	return nil
+}
+
+// Load loads a TransformerModel from a file using gob decoding.
+func Load(filePath string) (*TransformerModel, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	decoder := gob.NewDecoder(file)
+	model := &TransformerModel{}
+	if err := decoder.Decode(model); err != nil {
+		return nil, fmt.Errorf("failed to decode model: %w", err)
+	}
+	return model, nil
 }
 
 // Generate performs greedy decoding to generate a target sequence.

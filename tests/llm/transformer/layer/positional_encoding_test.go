@@ -5,7 +5,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer/core"
 	"github.com/pplmx/algo-go/llm/transformer/layer"
-	test_core "github.com/pplmx/algo-go/tests/llm/transformer/core"
+	test_core "github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestPositionalEncoding_Forward(t *testing.T) {

@@ -1,4 +1,4 @@
-package core
+package core_test
 
 import (
 	"math"
@@ -6,6 +6,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer/config"
 	"github.com/pplmx/algo-go/llm/transformer/core"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestCrossEntropyLoss(t *testing.T) {
@@ -32,7 +33,11 @@ func TestCrossEntropyLoss(t *testing.T) {
 	// 3.1. Softmax
 	softmax := func(row []float64) []float64 {
 		maxVal := row[0]
-		for _, v := range row { if v > maxVal { maxVal = v } }
+		for _, v := range row {
+			if v > maxVal {
+				maxVal = v
+			}
+		}
 		expVals := make([]float64, len(row))
 		sumExp := 0.0
 		for i, v := range row {
@@ -78,7 +83,6 @@ func TestCrossEntropyLoss(t *testing.T) {
 	}
 	expectedGrad = core.ScaleMatrix(expectedGrad, 1.0/float64(batchSize*seqLen))
 
-
 	// 4. 执行前向和后向传播
 	loss := lossFunc.Forward(logits, targets)
 	grad := lossFunc.Backward(logits, targets)
@@ -88,7 +92,7 @@ func TestCrossEntropyLoss(t *testing.T) {
 		t.Errorf("Forward() loss = %v, want %v", loss, expectedLoss)
 	}
 
-	if !MatricesAlmostEqual(grad, expectedGrad, 1e-9) {
+	if !helpers.MatricesAlmostEqual(grad, expectedGrad, 1e-9) {
 		t.Errorf("Backward() grad = %v, want %v", grad, expectedGrad)
 	}
 }

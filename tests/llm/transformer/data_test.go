@@ -6,7 +6,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer"
 	"github.com/pplmx/algo-go/llm/transformer/config"
-	test_core "github.com/pplmx/algo-go/tests/llm/transformer/core"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestDataset(t *testing.T) {
@@ -38,7 +38,7 @@ func TestDataLoader_NextBatch(t *testing.T) {
 	// Check padding
 	expectedSrc1 := []int{1, 2, 3, 0, 0}
 	expectedSrc2 := []int{4, 5, 0, 0, 0}
-	if !test_core.IntSliceEqual(srcBatch[0], expectedSrc1) || !test_core.IntSliceEqual(srcBatch[1], expectedSrc2) {
+	if !helpers.IntSliceEqual(srcBatch[0], expectedSrc1) || !helpers.IntSliceEqual(srcBatch[1], expectedSrc2) {
 		t.Errorf("Padding incorrect for srcBatch. Got %v, %v", srcBatch[0], srcBatch[1])
 	}
 
