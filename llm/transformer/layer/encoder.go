@@ -127,9 +127,9 @@ func NewTransformerEncoder(cfg config.TransformerConfig, numLayers int) *Transfo
 	}
 
 	return &TransformerEncoder{
-		Config: cfg,
-		PosEnc: NewPositionalEncoding(cfg.MaxSeqLen, cfg.DModel),
-		Layers: layers,
+		Config:      cfg,
+		PosEnc:      NewPositionalEncoding(cfg.MaxSeqLen, cfg.DModel),
+		Layers:      layers,
 		lastOutputs: make([]core.Matrix, numLayers), // Initialize lastOutputs
 	}
 }

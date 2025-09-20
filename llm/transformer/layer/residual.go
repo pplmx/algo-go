@@ -7,9 +7,9 @@ type ResidualConnection struct {
 	Norm    *core.LayerNorm
 	Dropout *core.Dropout
 
-	lastX            core.Matrix
+	lastX              core.Matrix
 	lastSublayerOutput core.Matrix
-	lastAddedOutput  core.Matrix
+	lastAddedOutput    core.Matrix
 }
 
 // NewResidualConnection creates a new ResidualConnection layer.

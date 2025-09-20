@@ -54,7 +54,7 @@ func TestMultiHeadAttention_Forward(t *testing.T) {
 			t.Errorf("Attention weights for head %d dimension = %d, want %d", i, len(w[0]), seqLen)
 		}
 	}
-	
+
 	// 7. 验证输出值 (这是一个比较复杂的场景，因为涉及到随机初始化的权重)
 	// 我们可以做一个简单的 sanity check，比如检查输出不全为0
 	isAllZero := true

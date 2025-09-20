@@ -19,7 +19,7 @@ type TransformerModel struct {
 	Decoder      *layer.TransformerDecoder
 	Generator    *layer.LinearLayer
 
-	lastSrcEmb  core.Matrix
+	lastSrcEmb    core.Matrix
 	lastEncOutput core.Matrix
 	lastDecOutput core.Matrix
 }
@@ -171,7 +171,7 @@ func (t *TransformerModel) Generate(srcInput [][]int, maxLen int) [][]int {
 		for i := range srcInput {
 			// The logits are flattened (batch_size * seq_len, vocab_size)
 			// We need the logits for the last token of each sequence in the batch
-			lastLogits[i] = logits[i*len(tgtInput[0]) + len(tgtInput[0]) - 1]
+			lastLogits[i] = logits[i*len(tgtInput[0])+len(tgtInput[0])-1]
 		}
 
 		// Select the token with the highest probability (greedy)

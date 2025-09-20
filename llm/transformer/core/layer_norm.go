@@ -3,14 +3,15 @@ package core
 import (
 	"math"
 )
+
 type LayerNorm struct {
 	Gamma Matrix
 	Beta  Matrix
 	Eps   float64
 
-	lastInput         Matrix
-	lastMean          []float64
-	lastVariance      []float64
+	lastInput           Matrix
+	lastMean            []float64
+	lastVariance        []float64
 	lastNormalizedInput Matrix
 
 	gradGamma Matrix

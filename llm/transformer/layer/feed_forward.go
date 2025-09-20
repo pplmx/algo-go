@@ -8,7 +8,7 @@ type FeedForwardNetwork struct {
 	fc2     *LinearLayer
 	dropout *core.Dropout
 
-	lastH        core.Matrix // Output of fc1 before ReLU
+	lastH          core.Matrix // Output of fc1 before ReLU
 	lastReLUOutput core.Matrix // Output of ReLU before dropout
 }
 

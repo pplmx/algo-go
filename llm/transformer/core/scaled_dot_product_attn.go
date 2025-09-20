@@ -9,10 +9,10 @@ type ScaledDotProductAttention struct {
 	DK      int
 	Dropout *Dropout
 
-	lastQuery Matrix
-	lastKey   Matrix
-	lastValue Matrix
-	lastScores Matrix
+	lastQuery   Matrix
+	lastKey     Matrix
+	lastValue   Matrix
+	lastScores  Matrix
 	lastWeights Matrix
 }
 

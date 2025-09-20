@@ -6,7 +6,7 @@ import "github.com/pplmx/algo-go/llm/transformer/core"
 type Embedding struct {
 	Weight core.Matrix
 
-	lastInput [][]int // Store input token IDs for backward pass
+	lastInput  [][]int // Store input token IDs for backward pass
 	gradWeight core.Matrix
 }
 

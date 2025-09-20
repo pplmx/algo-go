@@ -80,4 +80,5 @@ func TestTransformerModel_Forward(t *testing.T) {
 	// 8. 验证解码器编码器-解码器注意力权重维度
 	if len(encDecAttnWeights) != numDecoderLayers {
 		t.Errorf("Number of decoder encoder-decoder attention weights = %d, want %d", len(encDecAttnWeights), numDecoderLayers)
-	}}
+	}
+}

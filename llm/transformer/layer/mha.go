@@ -13,13 +13,13 @@ type MultiHeadAttention struct {
 	WO        *LinearLayer
 	Attention *core.ScaledDotProductAttention
 
-	lastQ          core.Matrix
-	lastK          core.Matrix
-	lastV          core.Matrix
-	lastQHeads     []core.Matrix
-	lastKHeads     []core.Matrix
-	lastVHeads     []core.Matrix
-	lastOutputs    []core.Matrix
+	lastQ            core.Matrix
+	lastK            core.Matrix
+	lastV            core.Matrix
+	lastQHeads       []core.Matrix
+	lastKHeads       []core.Matrix
+	lastVHeads       []core.Matrix
+	lastOutputs      []core.Matrix
 	lastConcatOutput core.Matrix
 }
 

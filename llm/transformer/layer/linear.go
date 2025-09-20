@@ -4,9 +4,9 @@ import "github.com/pplmx/algo-go/llm/transformer/core"
 
 // 线性变换层
 type LinearLayer struct {
-	Weight    core.Matrix
-	Bias      core.Matrix
-	UseBias   bool
+	Weight  core.Matrix
+	Bias    core.Matrix
+	UseBias bool
 
 	lastInput core.Matrix // Store input for backward pass
 
