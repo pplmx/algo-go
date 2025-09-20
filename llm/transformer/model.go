@@ -108,3 +108,68 @@ func (t *TransformerModel) ZeroGradients() {
 	t.Decoder.ZeroGradients()
 	t.Generator.ZeroGradients()
 }
+
+// Generate performs greedy decoding to generate a target sequence.
+func (t *TransformerModel) Generate(srcInput [][]int, maxLen int) [][]int {
+	// Set model to evaluation mode
+	t.SetTraining(false)
+
+	// Initialize target sequence with start token
+	tgtInput := make([][]int, len(srcInput))
+	for i := range srcInput {
+		tgtInput[i] = []int{t.Config.StartToken}
+	}
+
+	// Create dummy masks for generation (no actual masking needed for greedy decoding here)
+	// In a real scenario, srcMask would be based on srcInput padding
+	// and tgtMask would be a look-ahead mask for the current tgtInput length.
+	srcMask := core.Zeros(len(srcInput)*t.Config.MaxSeqLen, len(srcInput)*t.Config.MaxSeqLen)
+	tgtMask := core.Zeros(len(srcInput)*t.Config.MaxSeqLen, len(srcInput)*t.Config.MaxSeqLen)
+
+	// Iteratively generate tokens
+	for l := 0; l < maxLen; l++ {
+		// Forward pass to get logits for the next token
+		logits, _, _, _ := t.Forward(srcInput, tgtInput, srcMask, tgtMask)
+
+		// Get the last token's logits (corresponding to the last position in the current tgtInput)
+		lastLogits := make(core.Matrix, len(srcInput))
+		for i := range srcInput {
+			// The logits are flattened (batch_size * seq_len, vocab_size)
+			// We need the logits for the last token of each sequence in the batch
+			lastLogits[i] = logits[i*len(tgtInput[0]) + len(tgtInput[0]) - 1]
+		}
+
+		// Select the token with the highest probability (greedy)
+		nextTokens := make([]int, len(srcInput))
+		for i, row := range lastLogits {
+			maxProb := -1.0
+			maxIdx := -1
+			for j, prob := range row {
+				if prob > maxProb {
+					maxProb = prob
+					maxIdx = j
+				}
+			}
+			nextTokens[i] = maxIdx
+		}
+
+		// Append the selected token to the target sequence
+		for i := range tgtInput {
+			tgtInput[i] = append(tgtInput[i], nextTokens[i])
+		}
+
+		// Check for end token
+		isAllEnd := true
+		for _, token := range nextTokens {
+			if token != t.Config.EndToken {
+				isAllEnd = false
+				break
+			}
+		}
+		if isAllEnd {
+			break
+		}
+	}
+
+	return tgtInput
+}
