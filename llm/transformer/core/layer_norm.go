@@ -3,7 +3,6 @@ package core
 import (
 	"math"
 )
-// 层归一化模块
 type LayerNorm struct {
 	Gamma Matrix
 	Beta  Matrix
@@ -18,15 +17,16 @@ type LayerNorm struct {
 	gradBeta  Matrix
 }
 
+// NewLayerNorm creates a new LayerNorm layer.
 func NewLayerNorm(dModel int, eps float64) *LayerNorm {
-	pi := &ParameterInitializer{}
 	return &LayerNorm{
-		Gamma: pi.Ones(1, dModel),
-		Beta:  pi.Zeros(1, dModel),
+		Gamma: Ones(1, dModel),
+		Beta:  Zeros(1, dModel),
 		Eps:   eps,
 	}
 }
 
+// Forward performs the forward pass for the LayerNorm layer.
 func (l *LayerNorm) Forward(x Matrix) Matrix {
 	l.lastInput = x
 	result := make(Matrix, len(x))
@@ -69,6 +69,7 @@ func (l *LayerNorm) Forward(x Matrix) Matrix {
 	return result
 }
 
+// Backward performs the backward pass for the LayerNorm layer.
 func (l *LayerNorm) Backward(gradOutput Matrix) Matrix {
 	gradInput := make(Matrix, len(gradOutput))
 	l.gradGamma = Zeros(1, len(l.Gamma[0]))
@@ -112,14 +113,17 @@ func (l *LayerNorm) Backward(gradOutput Matrix) Matrix {
 	return gradInput
 }
 
+// GetParameters returns the trainable parameters (Gamma and Beta) of the LayerNorm layer.
 func (l *LayerNorm) GetParameters() []Matrix {
 	return []Matrix{l.Gamma, l.Beta}
 }
 
+// GetGradients returns the gradients of the trainable parameters (gradGamma and gradBeta).
 func (l *LayerNorm) GetGradients() []Matrix {
 	return []Matrix{l.gradGamma, l.gradBeta}
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero.
 func (l *LayerNorm) ZeroGradients() {
 	if l.gradGamma != nil {
 		l.gradGamma = Zeros(len(l.gradGamma), len(l.gradGamma[0]))

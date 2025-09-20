@@ -13,6 +13,7 @@ type AdamOptimizer struct {
 	v      Matrix // Second moment estimates
 }
 
+// NewAdamOptimizer creates a new AdamOptimizer.
 func NewAdamOptimizer(cfg config.TransformerConfig) *AdamOptimizer {
 	return &AdamOptimizer{
 		Config: cfg,
@@ -20,6 +21,8 @@ func NewAdamOptimizer(cfg config.TransformerConfig) *AdamOptimizer {
 	}
 }
 
+// Update applies the Adam optimization step to the given parameter and gradient.
+// It manages its internal moment estimates (m and v) automatically.
 func (a *AdamOptimizer) Update(param, grad Matrix) {
 	a.Step++
 

@@ -21,7 +21,7 @@ func NewLinearLayer(inFeatures, outFeatures int, useBias bool) *LinearLayer {
 		UseBias: useBias,
 	}
 	if useBias {
-		layer.Bias = pi.Zeros(1, outFeatures)
+		layer.Bias = core.Zeros(1, outFeatures)
 	}
 	return layer
 }

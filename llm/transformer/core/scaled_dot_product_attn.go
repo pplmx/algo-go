@@ -16,6 +16,7 @@ type ScaledDotProductAttention struct {
 	lastWeights Matrix
 }
 
+// NewScaledDotProductAttention creates a new ScaledDotProductAttention module.
 func NewScaledDotProductAttention(dK int, dropoutRate float64) *ScaledDotProductAttention {
 	return &ScaledDotProductAttention{
 		DK:      dK,
@@ -23,10 +24,12 @@ func NewScaledDotProductAttention(dK int, dropoutRate float64) *ScaledDotProduct
 	}
 }
 
+// SetTraining sets the training mode for the ScaledDotProductAttention module.
 func (a *ScaledDotProductAttention) SetTraining(training bool) {
 	a.Dropout.SetTraining(training)
 }
 
+// Forward performs the forward pass for the ScaledDotProductAttention module.
 func (a *ScaledDotProductAttention) Forward(query, key, value Matrix, mask Matrix) (Matrix, Matrix) {
 	a.lastQuery = query
 	a.lastKey = key
@@ -57,6 +60,7 @@ func (a *ScaledDotProductAttention) Forward(query, key, value Matrix, mask Matri
 	return output, weights
 }
 
+// Backward performs the backward pass for the ScaledDotProductAttention module.
 func (a *ScaledDotProductAttention) Backward(gradOutput Matrix) (gradQuery, gradKey, gradValue Matrix) {
 	// gradOutput is dL/d(output)
 	var gradScores Matrix
@@ -101,6 +105,7 @@ func (a *ScaledDotProductAttention) Backward(gradOutput Matrix) (gradQuery, grad
 	return gradQuery, gradKey, gradValue
 }
 
+// softmax applies the softmax function row-wise to a matrix.
 func (a *ScaledDotProductAttention) softmax(x Matrix) Matrix {
 	result := make(Matrix, len(x))
 	for i := range x {

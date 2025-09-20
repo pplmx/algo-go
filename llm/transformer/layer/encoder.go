@@ -20,6 +20,7 @@ type TransformerEncoderLayer struct {
 	lastFFNOutput  core.Matrix
 }
 
+// NewTransformerEncoderLayer creates a new TransformerEncoderLayer.
 func NewTransformerEncoderLayer(cfg config.TransformerConfig) *TransformerEncoderLayer {
 	return &TransformerEncoderLayer{
 		Config:       cfg,
@@ -30,6 +31,7 @@ func NewTransformerEncoderLayer(cfg config.TransformerConfig) *TransformerEncode
 	}
 }
 
+// SetTraining sets the training mode for the TransformerEncoderLayer.
 func (t *TransformerEncoderLayer) SetTraining(training bool) {
 	t.SelfAttn.SetTraining(training)
 	t.AttnResidual.SetTraining(training)
@@ -37,6 +39,7 @@ func (t *TransformerEncoderLayer) SetTraining(training bool) {
 	t.FFNResidual.SetTraining(training)
 }
 
+// Forward performs the forward pass for the TransformerEncoderLayer.
 func (t *TransformerEncoderLayer) Forward(x core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
 	t.lastX = x
 
@@ -58,6 +61,7 @@ func (t *TransformerEncoderLayer) Forward(x core.Matrix, mask core.Matrix) (core
 	return y, attnWeights
 }
 
+// Backward performs the backward pass for the TransformerEncoderLayer.
 func (t *TransformerEncoderLayer) Backward(gradOutput core.Matrix) core.Matrix {
 	// 1. Backward through FFNResidual
 	gradX1_from_FFNResidual, _ := t.FFNResidual.Backward(gradOutput)
@@ -77,6 +81,7 @@ func (t *TransformerEncoderLayer) Backward(gradOutput core.Matrix) core.Matrix {
 	return gradX
 }
 
+// GetParameters returns the trainable parameters of the TransformerEncoderLayer.
 func (t *TransformerEncoderLayer) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, t.SelfAttn.GetParameters()...)
@@ -86,6 +91,7 @@ func (t *TransformerEncoderLayer) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the TransformerEncoderLayer.
 func (t *TransformerEncoderLayer) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, t.SelfAttn.GetGradients()...)
@@ -95,6 +101,7 @@ func (t *TransformerEncoderLayer) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero for the TransformerEncoderLayer.
 func (t *TransformerEncoderLayer) ZeroGradients() {
 	t.SelfAttn.ZeroGradients()
 	t.AttnResidual.ZeroGradients()
@@ -102,7 +109,7 @@ func (t *TransformerEncoderLayer) ZeroGradients() {
 	t.FFNResidual.ZeroGradients()
 }
 
-// TransformerEncoder 代表了由 N 个 TransformerEncoderLayer 堆叠而成的整个 Encoder 模块
+// TransformerEncoder represents the entire Encoder module, stacked by N TransformerEncoderLayers.
 type TransformerEncoder struct {
 	Config config.TransformerConfig
 	PosEnc *PositionalEncoding
@@ -112,6 +119,7 @@ type TransformerEncoder struct {
 	lastOutputs []core.Matrix // Stores output of each layer for backward pass
 }
 
+// NewTransformerEncoder creates a new TransformerEncoder.
 func NewTransformerEncoder(cfg config.TransformerConfig, numLayers int) *TransformerEncoder {
 	layers := make([]*TransformerEncoderLayer, numLayers)
 	for i := 0; i < numLayers; i++ {
@@ -126,12 +134,14 @@ func NewTransformerEncoder(cfg config.TransformerConfig, numLayers int) *Transfo
 	}
 }
 
+// SetTraining sets the training mode for the TransformerEncoder.
 func (t *TransformerEncoder) SetTraining(training bool) {
 	for _, layer := range t.Layers {
 		layer.SetTraining(training)
 	}
 }
 
+// Forward performs the forward pass for the TransformerEncoder.
 func (t *TransformerEncoder) Forward(x core.Matrix, mask core.Matrix) (core.Matrix, [][]core.Matrix) {
 	// 添加位置编码
 	encoded := t.PosEnc.Forward(x)
@@ -152,6 +162,7 @@ func (t *TransformerEncoder) Forward(x core.Matrix, mask core.Matrix) (core.Matr
 	return output, allAttnWeights
 }
 
+// Backward performs the backward pass for the TransformerEncoder.
 func (t *TransformerEncoder) Backward(gradOutput core.Matrix) core.Matrix {
 	// Initialize gradInput with zeros
 	gradInput := core.Zeros(len(gradOutput), len(gradOutput[0]))
@@ -172,6 +183,7 @@ func (t *TransformerEncoder) Backward(gradOutput core.Matrix) core.Matrix {
 	return gradInput
 }
 
+// GetParameters returns the trainable parameters of the TransformerEncoder.
 func (t *TransformerEncoder) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	// PosEnc has no trainable parameters
@@ -181,6 +193,7 @@ func (t *TransformerEncoder) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the TransformerEncoder.
 func (t *TransformerEncoder) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	for _, layer := range t.Layers {
@@ -189,6 +202,7 @@ func (t *TransformerEncoder) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero for the TransformerEncoder.
 func (t *TransformerEncoder) ZeroGradients() {
 	for _, layer := range t.Layers {
 		layer.ZeroGradients()

@@ -5,7 +5,6 @@ import (
 	"github.com/pplmx/algo-go/llm/transformer/core"
 )
 
-// TransformerDecoderLayer 定义了 Decoder 的一个独立的层
 type TransformerDecoderLayer struct {
 	Config           config.TransformerConfig
 	SelfAttn         *MultiHeadAttention
@@ -15,14 +14,15 @@ type TransformerDecoderLayer struct {
 	FFN              *FeedForwardNetwork
 	FFNResidual      *ResidualConnection
 
-	lastX            core.Matrix
-	lastEncoderOutput core.Matrix
-	lastSelfAttnOutput core.Matrix
-	lastX1           core.Matrix
+	lastX                core.Matrix
+	lastEncoderOutput    core.Matrix
+	lastSelfAttnOutput   core.Matrix
+	lastX1               core.Matrix
 	lastEncDecAttnOutput core.Matrix
-	lastX2           core.Matrix
+	lastX2               core.Matrix
 }
 
+// NewTransformerDecoderLayer creates a new TransformerDecoderLayer.
 func NewTransformerDecoderLayer(cfg config.TransformerConfig) *TransformerDecoderLayer {
 	return &TransformerDecoderLayer{
 		Config:           cfg,
@@ -35,6 +35,7 @@ func NewTransformerDecoderLayer(cfg config.TransformerConfig) *TransformerDecode
 	}
 }
 
+// SetTraining sets the training mode for the TransformerDecoderLayer.
 func (d *TransformerDecoderLayer) SetTraining(training bool) {
 	d.SelfAttn.SetTraining(training)
 	d.SelfAttnResidual.SetTraining(training)
@@ -44,6 +45,7 @@ func (d *TransformerDecoderLayer) SetTraining(training bool) {
 	d.FFNResidual.SetTraining(training)
 }
 
+// Forward performs the forward pass for the TransformerDecoderLayer.
 func (d *TransformerDecoderLayer) Forward(x, encoderOutput, srcMask, tgtMask core.Matrix) (core.Matrix, []core.Matrix, []core.Matrix) {
 	d.lastX = x
 	d.lastEncoderOutput = encoderOutput
@@ -71,6 +73,7 @@ func (d *TransformerDecoderLayer) Forward(x, encoderOutput, srcMask, tgtMask cor
 	return y, selfAttnWeights, encDecAttnWeights
 }
 
+// Backward performs the backward pass for the TransformerDecoderLayer.
 func (d *TransformerDecoderLayer) Backward(gradOutput core.Matrix) (gradX, gradEncoderOutput core.Matrix) {
 	// 1. Backward through FFNResidual
 	gradX2_from_FFNResidual, _ := d.FFNResidual.Backward(gradOutput)
@@ -99,6 +102,7 @@ func (d *TransformerDecoderLayer) Backward(gradOutput core.Matrix) (gradX, gradE
 	return gradX, gradEncoderOutput
 }
 
+// GetParameters returns the trainable parameters of the TransformerDecoderLayer.
 func (d *TransformerDecoderLayer) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, d.SelfAttn.GetParameters()...)
@@ -110,6 +114,7 @@ func (d *TransformerDecoderLayer) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the TransformerDecoderLayer.
 func (d *TransformerDecoderLayer) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, d.SelfAttn.GetGradients()...)
@@ -121,6 +126,7 @@ func (d *TransformerDecoderLayer) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero for the TransformerDecoderLayer.
 func (d *TransformerDecoderLayer) ZeroGradients() {
 	d.SelfAttn.ZeroGradients()
 	d.SelfAttnResidual.ZeroGradients()
@@ -130,18 +136,19 @@ func (d *TransformerDecoderLayer) ZeroGradients() {
 	d.FFNResidual.ZeroGradients()
 }
 
-// TransformerDecoder 代表了由 N 个 TransformerDecoderLayer 堆叠而成的整个 Decoder 模块
+// TransformerDecoder represents the entire Decoder module, stacked by N TransformerDecoderLayers.
 type TransformerDecoder struct {
 	Config       config.TransformerConfig
 	TgtEmbedding *Embedding
 	PosEnc       *PositionalEncoding
 	Layers       []*TransformerDecoderLayer
 
-	lastTgtEmb core.Matrix
-	lastOutputs []core.Matrix // Stores output of each layer for backward pass
+	lastTgtEmb         core.Matrix
+	lastOutputs        []core.Matrix // Stores output of each layer for backward pass
 	lastEncoderOutputs []core.Matrix // Stores encoderOutput for each layer for backward pass
 }
 
+// NewTransformerDecoder creates a new TransformerDecoder.
 func NewTransformerDecoder(cfg config.TransformerConfig, numLayers int) *TransformerDecoder {
 	layers := make([]*TransformerDecoderLayer, numLayers)
 	for i := 0; i < numLayers; i++ {
@@ -149,15 +156,16 @@ func NewTransformerDecoder(cfg config.TransformerConfig, numLayers int) *Transfo
 	}
 
 	return &TransformerDecoder{
-		Config:       cfg,
-		TgtEmbedding: NewEmbedding(cfg.VocabSize, cfg.DModel),
-		PosEnc:       NewPositionalEncoding(cfg.MaxSeqLen, cfg.DModel),
-		Layers:       layers,
-		lastOutputs: make([]core.Matrix, numLayers),
+		Config:             cfg,
+		TgtEmbedding:       NewEmbedding(cfg.VocabSize, cfg.DModel),
+		PosEnc:             NewPositionalEncoding(cfg.MaxSeqLen, cfg.DModel),
+		Layers:             layers,
+		lastOutputs:        make([]core.Matrix, numLayers),
 		lastEncoderOutputs: make([]core.Matrix, numLayers),
 	}
 }
 
+// SetTraining sets the training mode for the TransformerDecoder.
 func (t *TransformerDecoder) SetTraining(training bool) {
 	t.TgtEmbedding.SetTraining(training)
 	for _, layer := range t.Layers {
@@ -165,6 +173,7 @@ func (t *TransformerDecoder) SetTraining(training bool) {
 	}
 }
 
+// Forward performs the forward pass for the TransformerDecoder.
 func (t *TransformerDecoder) Forward(tgtInput [][]int, encoderOutput, srcMask, tgtMask core.Matrix) (core.Matrix, [][]core.Matrix, [][]core.Matrix) {
 	// 目标语言嵌入
 	tgtEmb := t.TgtEmbedding.Forward(tgtInput)
@@ -190,6 +199,7 @@ func (t *TransformerDecoder) Forward(tgtInput [][]int, encoderOutput, srcMask, t
 	return output, allSelfAttnWeights, allEncDecAttnWeights
 }
 
+// Backward performs the backward pass for the TransformerDecoder.
 func (t *TransformerDecoder) Backward(gradOutput core.Matrix) (gradTgtInput, gradEncoderOutput core.Matrix) {
 	// Initialize gradients
 	gradTgtInput = core.Zeros(len(t.lastTgtEmb), len(t.lastTgtEmb[0]))
@@ -216,6 +226,7 @@ func (t *TransformerDecoder) Backward(gradOutput core.Matrix) (gradTgtInput, gra
 	return gradTgtInput, gradEncoderOutput
 }
 
+// GetParameters returns the trainable parameters of the TransformerDecoder.
 func (t *TransformerDecoder) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, t.TgtEmbedding.GetParameters()...)
@@ -226,6 +237,7 @@ func (t *TransformerDecoder) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the TransformerDecoder.
 func (t *TransformerDecoder) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, t.TgtEmbedding.GetGradients()...)
@@ -235,6 +247,7 @@ func (t *TransformerDecoder) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero for the TransformerDecoder.
 func (t *TransformerDecoder) ZeroGradients() {
 	t.TgtEmbedding.ZeroGradients()
 	for _, layer := range t.Layers {

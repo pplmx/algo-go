@@ -5,7 +5,6 @@ import (
 	"github.com/pplmx/algo-go/llm/transformer/core"
 )
 
-// 多头注意力模块
 type MultiHeadAttention struct {
 	Config    config.TransformerConfig
 	WQ        *LinearLayer
@@ -24,6 +23,7 @@ type MultiHeadAttention struct {
 	lastConcatOutput core.Matrix
 }
 
+// NewMultiHeadAttention creates a new MultiHeadAttention module.
 func NewMultiHeadAttention(cfg config.TransformerConfig) *MultiHeadAttention {
 	dKPerHead := cfg.DK / cfg.NumHeads
 	dVPerHead := cfg.DV / cfg.NumHeads
@@ -38,10 +38,12 @@ func NewMultiHeadAttention(cfg config.TransformerConfig) *MultiHeadAttention {
 	}
 }
 
+// SetTraining sets the training mode for the MultiHeadAttention module.
 func (m *MultiHeadAttention) SetTraining(training bool) {
 	m.Attention.SetTraining(training)
 }
 
+// Forward performs the forward pass for the MultiHeadAttention module.
 func (m *MultiHeadAttention) Forward(qInput, kInput, vInput core.Matrix, mask core.Matrix) (core.Matrix, []core.Matrix) {
 	m.lastQ = m.WQ.Forward(qInput)
 	m.lastK = m.WK.Forward(kInput)
@@ -71,6 +73,7 @@ func (m *MultiHeadAttention) Forward(qInput, kInput, vInput core.Matrix, mask co
 	return output, weights
 }
 
+// splitHeads splits the input matrix into multiple heads for multi-head attention.
 func (m *MultiHeadAttention) splitHeads(x core.Matrix) []core.Matrix {
 	seqLen := len(x)
 	dHead := m.Config.DK / m.Config.NumHeads
@@ -88,6 +91,7 @@ func (m *MultiHeadAttention) splitHeads(x core.Matrix) []core.Matrix {
 	return heads
 }
 
+// concatHeads concatenates the outputs from multiple attention heads.
 func (m *MultiHeadAttention) concatHeads(heads []core.Matrix) core.Matrix {
 	seqLen := len(heads[0])
 	concat := make(core.Matrix, seqLen)
@@ -106,6 +110,7 @@ func (m *MultiHeadAttention) concatHeads(heads []core.Matrix) core.Matrix {
 	return concat
 }
 
+// Backward performs the backward pass for the MultiHeadAttention module.
 func (m *MultiHeadAttention) Backward(gradOutput core.Matrix) (gradQInput, gradKInput, gradVInput core.Matrix) {
 	// 1. Backward through WO
 	gradConcatOutput := m.WO.Backward(gradOutput)
@@ -137,6 +142,7 @@ func (m *MultiHeadAttention) Backward(gradOutput core.Matrix) (gradQInput, gradK
 	return gradQInput, gradKInput, gradVInput
 }
 
+// GetParameters returns the trainable parameters of the MultiHeadAttention module.
 func (m *MultiHeadAttention) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, m.WQ.GetParameters()...)
@@ -147,6 +153,7 @@ func (m *MultiHeadAttention) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the MultiHeadAttention module.
 func (m *MultiHeadAttention) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, m.WQ.GetGradients()...)
@@ -156,6 +163,7 @@ func (m *MultiHeadAttention) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero.
 func (m *MultiHeadAttention) ZeroGradients() {
 	m.WQ.ZeroGradients()
 	m.WK.ZeroGradients()
@@ -163,7 +171,7 @@ func (m *MultiHeadAttention) ZeroGradients() {
 	m.WO.ZeroGradients()
 }
 
-// unconcatHeads performs the reverse operation of concatHeads
+// unconcatHeads performs the reverse operation of concatHeads.
 func (m *MultiHeadAttention) unconcatHeads(gradConcatOutput core.Matrix) []core.Matrix {
 	seqLen := len(gradConcatOutput)
 	dVPerHead := m.Config.DV / m.Config.NumHeads
@@ -179,7 +187,7 @@ func (m *MultiHeadAttention) unconcatHeads(gradConcatOutput core.Matrix) []core.
 	return gradOutputs
 }
 
-// unsplitHeads performs the reverse operation of splitHeads
+// unsplitHeads performs the reverse operation of splitHeads.
 func (m *MultiHeadAttention) unsplitHeads(gradHeads []core.Matrix, originalDim int) core.Matrix {
 	seqLen := len(gradHeads[0])
 	dHead := len(gradHeads[0][0]) // dKPerHead or dVPerHead

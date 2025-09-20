@@ -12,6 +12,7 @@ type ResidualConnection struct {
 	lastAddedOutput  core.Matrix
 }
 
+// NewResidualConnection creates a new ResidualConnection layer.
 func NewResidualConnection(dModel int, dropoutRate float64) *ResidualConnection {
 	return &ResidualConnection{
 		Norm:    core.NewLayerNorm(dModel, 1e-5),
@@ -19,10 +20,12 @@ func NewResidualConnection(dModel int, dropoutRate float64) *ResidualConnection 
 	}
 }
 
+// SetTraining sets the training mode for the ResidualConnection layer.
 func (r *ResidualConnection) SetTraining(training bool) {
 	r.Dropout.SetTraining(training)
 }
 
+// Forward performs the forward pass for the ResidualConnection layer.
 func (r *ResidualConnection) Forward(x, sublayer core.Matrix) core.Matrix {
 	r.lastX = x
 	r.lastSublayerOutput = sublayer
@@ -37,6 +40,7 @@ func (r *ResidualConnection) Forward(x, sublayer core.Matrix) core.Matrix {
 	return r.Norm.Forward(addedOutput)
 }
 
+// Backward performs the backward pass for the ResidualConnection layer.
 func (r *ResidualConnection) Backward(gradOutput core.Matrix) (gradX, gradSublayer core.Matrix) {
 	// 1. Backward through LayerNorm
 	gradAddedOutput := r.Norm.Backward(gradOutput)
@@ -52,6 +56,7 @@ func (r *ResidualConnection) Backward(gradOutput core.Matrix) (gradX, gradSublay
 	return gradX, gradSublayer
 }
 
+// GetParameters returns the trainable parameters of the ResidualConnection layer.
 func (r *ResidualConnection) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, r.Norm.GetParameters()...)
@@ -59,12 +64,14 @@ func (r *ResidualConnection) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the ResidualConnection layer.
 func (r *ResidualConnection) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, r.Norm.GetGradients()...)
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero.
 func (r *ResidualConnection) ZeroGradients() {
 	r.Norm.ZeroGradients()
 }

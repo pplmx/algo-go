@@ -12,6 +12,7 @@ type FeedForwardNetwork struct {
 	lastReLUOutput core.Matrix // Output of ReLU before dropout
 }
 
+// NewFeedForwardNetwork creates a new FeedForwardNetwork layer.
 func NewFeedForwardNetwork(dModel, ffnHiddenSize int, dropoutRate float64, useBias bool) *FeedForwardNetwork {
 	return &FeedForwardNetwork{
 		fc1:     NewLinearLayer(dModel, ffnHiddenSize, useBias),
@@ -20,10 +21,12 @@ func NewFeedForwardNetwork(dModel, ffnHiddenSize int, dropoutRate float64, useBi
 	}
 }
 
+// SetTraining sets the training mode for the FeedForwardNetwork layer.
 func (f *FeedForwardNetwork) SetTraining(training bool) {
 	f.dropout.SetTraining(training)
 }
 
+// Forward performs the forward pass for the FeedForwardNetwork layer.
 func (f *FeedForwardNetwork) Forward(x core.Matrix) core.Matrix {
 	// 第一层: ReLU激活
 	h := f.fc1.Forward(x)
@@ -49,6 +52,7 @@ func (f *FeedForwardNetwork) Forward(x core.Matrix) core.Matrix {
 	return f.fc2.Forward(dropped)
 }
 
+// Backward performs the backward pass for the FeedForwardNetwork layer.
 func (f *FeedForwardNetwork) Backward(gradOutput core.Matrix) core.Matrix {
 	// 1. Backward through fc2
 	gradDropped := f.fc2.Backward(gradOutput)
@@ -75,6 +79,7 @@ func (f *FeedForwardNetwork) Backward(gradOutput core.Matrix) core.Matrix {
 	return gradInput
 }
 
+// GetParameters returns the trainable parameters of the FeedForwardNetwork layer.
 func (f *FeedForwardNetwork) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, f.fc1.GetParameters()...)
@@ -83,6 +88,7 @@ func (f *FeedForwardNetwork) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of the trainable parameters of the FeedForwardNetwork layer.
 func (f *FeedForwardNetwork) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, f.fc1.GetGradients()...)
@@ -90,6 +96,7 @@ func (f *FeedForwardNetwork) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of the trainable parameters to zero.
 func (f *FeedForwardNetwork) ZeroGradients() {
 	f.fc1.ZeroGradients()
 	f.fc2.ZeroGradients()

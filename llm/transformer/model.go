@@ -20,6 +20,7 @@ type TransformerModel struct {
 	lastDecOutput core.Matrix
 }
 
+// NewTransformerModel creates a new TransformerModel.
 func NewTransformerModel(cfg config.TransformerConfig) *TransformerModel {
 	return &TransformerModel{
 		Config:       cfg,
@@ -31,11 +32,13 @@ func NewTransformerModel(cfg config.TransformerConfig) *TransformerModel {
 	}
 }
 
+// SetTraining sets the training mode for the TransformerModel.
 func (t *TransformerModel) SetTraining(training bool) {
 	t.Encoder.SetTraining(training)
 	t.Decoder.SetTraining(training)
 }
 
+// Forward performs the forward pass for the TransformerModel.
 func (t *TransformerModel) Forward(srcInput, tgtInput [][]int, srcMask, tgtMask core.Matrix) (core.Matrix, [][]core.Matrix, [][]core.Matrix, [][]core.Matrix) {
 	// 源语言嵌入
 	srcEmb := t.SrcEmbedding.Forward(srcInput)
@@ -55,6 +58,7 @@ func (t *TransformerModel) Forward(srcInput, tgtInput [][]int, srcMask, tgtMask 
 	return logits, encAttnWeights, selfAttnWeights, encDecAttnWeights
 }
 
+// Backward performs the backward pass for the TransformerModel.
 func (t *TransformerModel) Backward(gradOutput core.Matrix) (gradSrcInput, gradTgtInput core.Matrix) {
 	// 1. Backward through Generator
 	gradDecOutput := t.Generator.Backward(gradOutput)
@@ -74,6 +78,7 @@ func (t *TransformerModel) Backward(gradOutput core.Matrix) (gradSrcInput, gradT
 	return gradSrcInput, gradTgtInput
 }
 
+// GetParameters returns all trainable parameters of the TransformerModel.
 func (t *TransformerModel) GetParameters() []core.Matrix {
 	params := []core.Matrix{}
 	params = append(params, t.SrcEmbedding.GetParameters()...)
@@ -84,6 +89,7 @@ func (t *TransformerModel) GetParameters() []core.Matrix {
 	return params
 }
 
+// GetGradients returns the gradients of all trainable parameters of the TransformerModel.
 func (t *TransformerModel) GetGradients() []core.Matrix {
 	grads := []core.Matrix{}
 	grads = append(grads, t.SrcEmbedding.GetGradients()...)
@@ -94,6 +100,7 @@ func (t *TransformerModel) GetGradients() []core.Matrix {
 	return grads
 }
 
+// ZeroGradients sets the gradients of all trainable parameters to zero for the TransformerModel.
 func (t *TransformerModel) ZeroGradients() {
 	t.SrcEmbedding.ZeroGradients()
 	t.TgtEmbedding.ZeroGradients()

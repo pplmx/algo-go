@@ -13,6 +13,10 @@ type Dropout struct {
 	lastMask Matrix // Stores the mask applied during the forward pass
 }
 
+// NewDropout creates a new Dropout layer.
+// The random number generator is seeded with the current time, which might lead to non-deterministic
+// behavior if multiple Dropout layers are created in rapid succession. For deterministic behavior
+// in tests, consider passing a fixed rand.Source.
 func NewDropout(rate float64, training bool) *Dropout {
 	return &Dropout{
 		Rate:     rate,
@@ -21,10 +25,14 @@ func NewDropout(rate float64, training bool) *Dropout {
 	}
 }
 
+// SetTraining sets the training mode for the Dropout layer.
 func (d *Dropout) SetTraining(training bool) {
 	d.Training = training
 }
 
+// Forward performs the forward pass for the Dropout layer.
+// During training, it randomly sets elements to zero and scales the remaining ones.
+// During evaluation, it simply passes the input through.
 func (d *Dropout) Forward(x Matrix) Matrix {
 	if !d.Training || d.Rate == 0.0 {
 		return x
@@ -48,6 +56,8 @@ func (d *Dropout) Forward(x Matrix) Matrix {
 	return result
 }
 
+// Backward performs the backward pass for the Dropout layer.
+// It applies the same mask used in the forward pass to the gradients.
 func (d *Dropout) Backward(gradOutput Matrix) Matrix {
 	if !d.Training || d.Rate == 0.0 {
 		return gradOutput

@@ -10,10 +10,12 @@ type CrossEntropyLoss struct {
 	Config config.TransformerConfig
 }
 
+// NewCrossEntropyLoss creates a new CrossEntropyLoss function.
 func NewCrossEntropyLoss(cfg config.TransformerConfig) *CrossEntropyLoss {
 	return &CrossEntropyLoss{Config: cfg}
 }
 
+// Forward calculates the cross-entropy loss.
 func (c *CrossEntropyLoss) Forward(logits Matrix, targets [][]int) float64 {
 	batchSize := len(targets)
 	seqLen := len(targets[0])
@@ -33,6 +35,7 @@ func (c *CrossEntropyLoss) Forward(logits Matrix, targets [][]int) float64 {
 	return loss / float64(batchSize*seqLen)
 }
 
+// Backward calculates the gradients for the cross-entropy loss.
 func (c *CrossEntropyLoss) Backward(logits Matrix, targets [][]int) Matrix {
 	probs := c.softmax(logits)
 	batchSize := len(targets)
@@ -51,6 +54,7 @@ func (c *CrossEntropyLoss) Backward(logits Matrix, targets [][]int) Matrix {
 	return ScaleMatrix(grad, 1.0/float64(batchSize*seqLen))
 }
 
+// softmax applies the softmax function row-wise to a matrix.
 func (c *CrossEntropyLoss) softmax(x Matrix) Matrix {
 	result := make(Matrix, len(x))
 	for i := range x {

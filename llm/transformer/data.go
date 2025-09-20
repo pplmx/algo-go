@@ -25,7 +25,6 @@ func NewDataset(srcSentences, tgtSentences [][]int, cfg config.TransformerConfig
 	}
 }
 
-// DataLoader 结构体用于批量加载数据
 type DataLoader struct {
 	Dataset    *Dataset
 	BatchSize  int
@@ -33,7 +32,10 @@ type DataLoader struct {
 	rng        *rand.Rand
 }
 
-// NewDataLoader 创建一个新的 DataLoader 实例
+// NewDataLoader creates a new DataLoader instance.
+// The random number generator is seeded with the current time, which might lead to non-deterministic
+// behavior if multiple DataLoaders are created in rapid succession. For deterministic behavior
+// in tests, consider passing a fixed rand.Source.
 func NewDataLoader(dataset *Dataset, batchSize int) *DataLoader {
 	return &DataLoader{
 		Dataset:    dataset,
