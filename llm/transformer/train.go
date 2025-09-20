@@ -81,7 +81,7 @@ func (t *Trainer) Train(loader *DataLoader, numEpochs int) {
 
 			// Update parameters
 			for i := range params {
-				t.Optimizer.Update(params[i], grads[i], nil, nil) // m and v are handled internally by optimizer
+				t.Optimizer.Update(params[i], grads[i])
 			}
 
 			batchCount++
