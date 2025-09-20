@@ -8,14 +8,14 @@ import (
 
 // Adam 优化器
 type AdamOptimizer struct {
-	Config config.TransformerConfig
+	Config config.TrainConfig
 	Step   int
 	m      Matrix // First moment estimates
 	v      Matrix // Second moment estimates
 }
 
 // NewAdamOptimizer creates a new AdamOptimizer.
-func NewAdamOptimizer(cfg config.TransformerConfig) *AdamOptimizer {
+func NewAdamOptimizer(cfg config.TrainConfig) *AdamOptimizer {
 	return &AdamOptimizer{
 		Config: cfg,
 		Step:   0,

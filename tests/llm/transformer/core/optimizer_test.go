@@ -11,7 +11,7 @@ import (
 
 func TestAdamOptimizer_Update(t *testing.T) {
 	// 1. 配置和初始化
-	cfg := config.DefaultConfig()
+	cfg := config.NewDefaultTrainConfig()
 	optimizer := core.NewAdamOptimizer(cfg)
 
 	// 2. 准备输入数据

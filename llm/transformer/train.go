@@ -12,11 +12,11 @@ type Trainer struct {
 	Model     *TransformerModel
 	Optimizer *core.AdamOptimizer
 	LossFunc  *core.CrossEntropyLoss
-	Config    config.TransformerConfig
+	Config    config.AppConfig
 }
 
 // NewTrainer 创建一个新的 Trainer 实例
-func NewTrainer(model *TransformerModel, optimizer *core.AdamOptimizer, lossFunc *core.CrossEntropyLoss, cfg config.TransformerConfig) *Trainer {
+func NewTrainer(model *TransformerModel, optimizer *core.AdamOptimizer, lossFunc *core.CrossEntropyLoss, cfg config.AppConfig) *Trainer {
 	return &Trainer{
 		Model:     model,
 		Optimizer: optimizer,
@@ -26,10 +26,10 @@ func NewTrainer(model *TransformerModel, optimizer *core.AdamOptimizer, lossFunc
 }
 
 // Train 执行训练循环
-func (t *Trainer) Train(loader *DataLoader, numEpochs int) {
+func (t *Trainer) Train(loader *DataLoader) {
 	t.Model.SetTraining(true)
 
-	for epoch := 1; epoch <= numEpochs; epoch++ {
+	for epoch := 1; epoch <= t.Config.Train.NumEpochs; epoch++ {
 		loader.Reset()
 		totalLoss := 0.0
 		batchCount := 0
@@ -46,7 +46,7 @@ func (t *Trainer) Train(loader *DataLoader, numEpochs int) {
 				tgtInput[i] = make([]int, len(seq))
 				targets[i] = make([]int, len(seq))
 				// 假设起始 token 是 1, 结束 token 是 2
-				tgtInput[i][0] = t.Config.StartToken
+				tgtInput[i][0] = t.Config.Transformer.StartToken
 				copy(tgtInput[i][1:], seq[:len(seq)-1])
 				copy(targets[i], seq[1:])
 			}
