@@ -16,6 +16,9 @@ type TransformerConfig struct {
 	Beta1         float64
 	Beta2         float64
 	Eps           float64
+	PadToken      int
+	StartToken    int
+	EndToken      int
 }
 
 // 默认配置
@@ -35,5 +38,8 @@ func DefaultConfig() TransformerConfig {
 		Beta1:         0.9,
 		Beta2:         0.999,
 		Eps:           1e-8,
+		PadToken:      0,
+		StartToken:    1,
+		EndToken:      2,
 	}
 }

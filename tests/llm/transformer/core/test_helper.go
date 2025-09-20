@@ -23,3 +23,16 @@ func MatricesAlmostEqual(a, b core.Matrix, tolerance float64) bool {
 	}
 	return true
 }
+
+// IntSliceEqual 比较两个 int 切片是否相等
+func IntSliceEqual(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
+}
