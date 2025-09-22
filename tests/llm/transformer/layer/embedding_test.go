@@ -43,7 +43,7 @@ func TestEmbedding_Forward(t *testing.T) {
 			}
 		}
 	}
-	expectedOutput := core.NewTensorFromData(expectedOutputData, batchSize*seqLen, dModel)
+	expectedOutput := core.NewTensorFromData(expectedOutputData, batchSize, seqLen, dModel)
 
 	// 4. 执行前向传播
 	output := embedding.Forward(input)

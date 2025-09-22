@@ -48,11 +48,14 @@ func TestTransformerDecoderLayer_Forward(t *testing.T) {
 	output, selfAttnWeights, encDecAttnWeights := decoderLayer.Forward(x, encoderOutput, srcMask, tgtMask)
 
 	// 5. 验证输出维度
-	if output.Shape()[0] != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
+	expectedShape := []int{batchSize, seqLen, cfg.DModel}
+	if len(output.Shape()) != len(expectedShape) {
+		t.Fatalf("Output shape length = %d, want %d", len(output.Shape()), len(expectedShape))
 	}
-	if output.Shape()[1] != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
+	for i, dim := range expectedShape {
+		if output.Shape()[i] != dim {
+			t.Errorf("Output shape dimension %d = %d, want %d", i, output.Shape()[i], dim)
+		}
 	}
 
 	// 6. 验证注意力权重维度
@@ -110,11 +113,14 @@ func TestTransformerDecoder_Forward(t *testing.T) {
 	output, allSelfAttnWeights, allEncDecAttnWeights := decoder.Forward(tgtInput, encoderOutput, srcMask, tgtMask)
 
 	// 5. 验证输出维度
-	if output.Shape()[0] != batchSize*seqLen {
-		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], batchSize*seqLen)
+	expectedShape := []int{batchSize, seqLen, cfg.DModel}
+	if len(output.Shape()) != len(expectedShape) {
+		t.Fatalf("Output shape length = %d, want %d", len(output.Shape()), len(expectedShape))
 	}
-	if output.Shape()[1] != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
+	for i, dim := range expectedShape {
+		if output.Shape()[i] != dim {
+			t.Errorf("Output shape dimension %d = %d, want %d", i, output.Shape()[i], dim)
+		}
 	}
 
 	// 6. 验证注意力权重维度

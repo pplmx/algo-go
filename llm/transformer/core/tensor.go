@@ -903,12 +903,17 @@ func (t *Tensor) sameShape(other *Tensor) bool {
 	return true
 }
 
-// Placeholder for broadcastShapes
+// broadcastShapes 是一个简化的广播形状计算函数占位符。
+// 一个完整的实现会处理更复杂的广播规则（例如，NumPy的广播语义）。
+// 当前版本仅支持两个张量具有相同数量的维度，或者其中一个是一维标量张量。
+// 它会 panic 如果遇到不支持的广播情况。
 func broadcastShapes(a, b []int) ([]int, []int, []int) {
 	// This is a simplified placeholder. A real implementation would be more complex.
 	if len(a) != len(b) {
+		// A real implementation would handle this by prepending dims of size 1.
 		panic("Broadcasting between different numbers of dimensions is not supported in this placeholder.")
 	}
+	// A real implementation would also check for dimensions of size 1.
 	return a, a, b
 }
 

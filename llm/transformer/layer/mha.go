@@ -72,6 +72,36 @@ func (m *MultiHeadAttention) Forward(qInput, kInput, vInput *core.Tensor, mask *
 	outputs := make([]*core.Tensor, m.Config.NumHeads)
 	weights := make([]*core.Tensor, m.Config.NumHeads)
 
+	// --- 掩码处理 ---
+	// MHA 需要一个形状为 (batch * num_heads, seq_len, seq_len) 的掩码，以便为每个头部分配。
+	// 然而，传入的掩码可能有两种形式：
+	// 1. (batch, 1, seq, seq): 广播掩码，所有头共享同一个掩码。
+	// 2. (batch, num_heads, seq, seq): 每个头有单独的预计算掩码。
+	//
+	// 下面的逻辑将这两种情况统一处理：
+	// 如果是情况1，我们手动将其“平铺”(tile)成情况2的形状。
+	if mask != nil && len(mask.Shape()) == 4 && mask.Shape()[1] == 1 {
+		numHeads := m.Config.NumHeads
+		seqLen := mask.Shape()[2]
+
+		// Create a new tiled mask.
+		tiledMaskData := make([]float64, batchSize*numHeads*seqLen*seqLen)
+		originalMaskData := mask.Data()
+
+		for b := 0; b < batchSize; b++ {
+			for h := 0; h < numHeads; h++ {
+				for s1 := 0; s1 < seqLen; s1++ {
+					for s2 := 0; s2 < seqLen; s2++ {
+						srcIdx := b*mask.Strides()[0] + 0*mask.Strides()[1] + s1*mask.Strides()[2] + s2*mask.Strides()[3]
+						destIdx := b*(numHeads*seqLen*seqLen) + h*(seqLen*seqLen) + s1*seqLen + s2
+						tiledMaskData[destIdx] = originalMaskData[srcIdx]
+					}
+				}
+			}
+		}
+		mask = core.NewTensorFromData(tiledMaskData, batchSize, numHeads, seqLen, seqLen)
+	}
+
 	var headMask *core.Tensor
 	// Reshape mask to (batch_size * num_heads, seq_len, seq_len) for easier slicing
 	if mask != nil {
@@ -125,13 +155,45 @@ func (m *MultiHeadAttention) splitHeads(x *core.Tensor) []*core.Tensor {
 	return heads
 }
 
-// concatHeads concatenates the outputs from multiple attention heads.
+// concatHeads 合并多个注意力头的输出。
+// 输入 `heads` 是一个张量切片，其中每个张量的形状为 (batchSize, seqLen, dHead)。
+// 该函数将这些头沿最后一个维度拼接起来，生成一个形状为 (batchSize, seqLen, numHeads * dHead) 的张量。
+//
+// 由于核心张量库缺少高效的 `stack` 或 `concat` 操作，此实现通过手动计算步长和复制数据来完成。
+// 这种方法功能上是正确的，但在性能上不是最优的，因为它涉及大量的数据复制。
 func (m *MultiHeadAttention) concatHeads(heads []*core.Tensor) *core.Tensor {
-	// This is a simplified placeholder. A real implementation would be more efficient.
 	batchSize := heads[0].Shape()[0]
 	seqLen := heads[0].Shape()[1]
-	dv := heads[0].Shape()[2] * m.Config.NumHeads
-	return core.Zeros(batchSize, seqLen, dv)
+	dHead := heads[0].Shape()[2]
+	numHeads := m.Config.NumHeads
+	totalDV := numHeads * dHead
+
+	// 最终拼接后的数据切片
+	finalData := make([]float64, batchSize*seqLen*totalDV)
+
+	// 计算最终张量 (batch, seq, total_dv) 的步长
+	stride0 := seqLen * totalDV
+	stride1 := totalDV
+
+	// 遍历每个头，将其数据复制到 finalData 的正确位置
+	for h, head := range heads {
+		headData := head.Data()
+		headStride0 := head.Strides()[0] // head 的第0维步长 (seq * d_head)
+		headStride1 := head.Strides()[1] // head 的第1维步长 (d_head)
+
+		for i := 0; i < batchSize; i++ {
+			for j := 0; j < seqLen; j++ {
+				// 计算源数据（单个头）中的偏移量
+				srcOffset := i*headStride0 + j*headStride1
+				// 计算目标数据（拼接后）中的偏移量
+				destOffset := i*stride0 + j*stride1 + h*dHead
+				// 复制数据
+				copy(finalData[destOffset:destOffset+dHead], headData[srcOffset:srcOffset+dHead])
+			}
+		}
+	}
+
+	return core.NewTensorFromData(finalData, batchSize, seqLen, totalDV)
 }
 
 // Backward performs the backward pass for the MultiHeadAttention module.

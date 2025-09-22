@@ -19,6 +19,7 @@ func TestTransformerEncoderLayer_Forward(t *testing.T) {
 		DropoutRate:   0.0,
 		UseBias:       false,
 	}
+	batchSize := 1
 	seqLen := 3
 
 	// 2. 初始化 EncoderLayer
@@ -31,17 +32,20 @@ func TestTransformerEncoderLayer_Forward(t *testing.T) {
 		8, 7, 6, 5, 4, 3, 2, 1,
 		1, 3, 5, 7, 9, 2, 4, 6,
 	}
-	input := core.NewTensorFromData(inputData, seqLen, cfg.DModel)
+	input := core.NewTensorFromData(inputData, batchSize, seqLen, cfg.DModel)
 
 	// 4. 执行前向传播
 	output, attnWeights := encoderLayer.Forward(input, nil)
 
 	// 5. 验证输出维度
-	if output.Shape()[0] != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
+	expectedShape := []int{batchSize, seqLen, cfg.DModel}
+	if len(output.Shape()) != len(expectedShape) {
+		t.Fatalf("Output shape length = %d, want %d", len(output.Shape()), len(expectedShape))
 	}
-	if output.Shape()[1] != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
+	for i, dim := range expectedShape {
+		if output.Shape()[i] != dim {
+			t.Errorf("Output shape dimension %d = %d, want %d", i, output.Shape()[i], dim)
+		}
 	}
 
 	// 6. 验证注意力权重维度
@@ -60,9 +64,11 @@ func TestTransformerEncoder_Forward(t *testing.T) {
 		DV:            4,
 		FFNHiddenSize: 16,
 		MaxSeqLen:     10,
+		VocabSize:     10, // Add vocab size
 		DropoutRate:   0.0,
 		UseBias:       false,
 	}
+	batchSize := 2
 	seqLen := 5
 
 	// 2. 初始化 Encoder
@@ -70,11 +76,11 @@ func TestTransformerEncoder_Forward(t *testing.T) {
 	encoder.SetTraining(false)
 
 	// 3. 准备输入数据
-	input := make([][]int, seqLen)
+	input := make([][]int, batchSize)
 	for i := range input {
-		input[i] = make([]int, cfg.DModel)
+		input[i] = make([]int, seqLen)
 		for j := range input[i] {
-			input[i][j] = i*cfg.DModel + j
+			input[i][j] = (i*seqLen + j) % 10 // Use a dummy vocab size
 		}
 	}
 
@@ -82,11 +88,14 @@ func TestTransformerEncoder_Forward(t *testing.T) {
 	output, allAttnWeights := encoder.Forward(input, nil)
 
 	// 5. 验证输出维度
-	if output.Shape()[0] != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
+	expectedShape := []int{batchSize, seqLen, cfg.DModel}
+	if len(output.Shape()) != len(expectedShape) {
+		t.Fatalf("Output shape length = %d, want %d", len(output.Shape()), len(expectedShape))
 	}
-	if output.Shape()[1] != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
+	for i, dim := range expectedShape {
+		if output.Shape()[i] != dim {
+			t.Errorf("Output shape dimension %d = %d, want %d", i, output.Shape()[i], dim)
+		}
 	}
 
 	// 6. 验证注意力权重维度

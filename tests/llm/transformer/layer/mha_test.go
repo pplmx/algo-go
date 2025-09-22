@@ -18,6 +18,7 @@ func TestMultiHeadAttention_Forward(t *testing.T) {
 		UseBias:     false,
 		DropoutRate: 0.0,
 	}
+	batchSize := 1
 	seqLen := 3
 
 	// 2. 初始化 MHA 层
@@ -30,17 +31,20 @@ func TestMultiHeadAttention_Forward(t *testing.T) {
 		8, 7, 6, 5, 4, 3, 2, 1,
 		1, 3, 5, 7, 9, 2, 4, 6,
 	}
-	input := core.NewTensorFromData(inputData, seqLen, cfg.DModel)
+	input := core.NewTensorFromData(inputData, batchSize, seqLen, cfg.DModel)
 
 	// 4. 执行前向传播
 	output, weights := mha.Forward(input, input, input, nil)
 
 	// 5. 验证输出维度
-	if output.Shape()[0] != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
+	expectedShape := []int{batchSize, seqLen, cfg.DModel}
+	if len(output.Shape()) != len(expectedShape) {
+		t.Fatalf("Output shape length = %d, want %d", len(output.Shape()), len(expectedShape))
 	}
-	if output.Shape()[1] != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
+	for i, dim := range expectedShape {
+		if output.Shape()[i] != dim {
+			t.Errorf("Output shape dimension %d = %d, want %d", i, output.Shape()[i], dim)
+		}
 	}
 
 	// 6. 验证注意力权重维度
@@ -48,11 +52,14 @@ func TestMultiHeadAttention_Forward(t *testing.T) {
 		t.Errorf("Number of attention heads = %d, want %d", len(weights), cfg.NumHeads)
 	}
 	for i, w := range weights {
-		if w.Shape()[0] != seqLen {
-			t.Errorf("Attention weights for head %d sequence length = %d, want %d", i, w.Shape()[0], seqLen)
+		expectedWeightShape := []int{batchSize, seqLen, seqLen}
+		if len(w.Shape()) != len(expectedWeightShape) {
+			t.Fatalf("Attention weights for head %d shape length = %d, want %d", i, len(w.Shape()), len(expectedWeightShape))
 		}
-		if w.Shape()[1] != seqLen {
-			t.Errorf("Attention weights for head %d dimension = %d, want %d", i, w.Shape()[1], seqLen)
+		for j, dim := range expectedWeightShape {
+			if w.Shape()[j] != dim {
+				t.Errorf("Attention weights for head %d shape dimension %d = %d, want %d", i, j, w.Shape()[j], dim)
+			}
 		}
 	}
 
@@ -61,8 +68,13 @@ func TestMultiHeadAttention_Forward(t *testing.T) {
 	isAllZero := true
 	for i := 0; i < output.Shape()[0]; i++ {
 		for j := 0; j < output.Shape()[1]; j++ {
-			if output.Get(i, j) != 0 {
-				isAllZero = false
+			for k := 0; k < output.Shape()[2]; k++ {
+				if output.Get(i, j, k) != 0 {
+					isAllZero = false
+					break
+				}
+			}
+			if !isAllZero {
 				break
 			}
 		}
