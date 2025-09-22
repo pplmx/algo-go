@@ -1,0 +1,1214 @@
+package core
+
+import (
+	"fmt"
+	"math"
+	"math/rand"
+	"time"
+)
+
+// Tensor 多维矩阵结构
+type Tensor struct {
+	data         []float64 // 一维存储
+	shape        []int     // 各维度大小
+	strides      []int     // 步长
+	size         int       // 总元素数
+	RequiresGrad bool
+	Grad         *Tensor
+}
+
+// NewMatrix 创建指定形状的零矩阵
+func NewMatrix(shape ...int) *Tensor {
+	size := 1
+	for _, dim := range shape {
+		if dim <= 0 {
+			panic("维度必须为正数")
+		}
+		size *= dim
+	}
+
+	// 计算步长（行优先存储）
+	strides := make([]int, len(shape))
+	stride := 1
+	for i := len(shape) - 1; i >= 0; i-- {
+		strides[i] = stride
+		stride *= shape[i]
+	}
+
+	return &Tensor{
+		data:    make([]float64, size),
+		shape:   shape,
+		strides: strides,
+		size:    size,
+	}
+}
+
+// NewMatrixFromData 从数据创建矩阵
+func NewMatrixFromData(data []float64, shape ...int) *Tensor {
+	m := NewMatrix(shape...)
+	if len(data) != m.size {
+		panic(fmt.Sprintf("数据长度 %d 与形状 %v 不匹配", len(data), shape))
+	}
+	copy(m.data, data)
+	return m
+}
+
+// Zeros 创建零矩阵
+func Zeros(shape ...int) *Tensor {
+	return NewMatrix(shape...)
+}
+
+// Ones 创建全1矩阵
+func Ones(shape ...int) *Tensor {
+	m := NewMatrix(shape...)
+	for i := range m.data {
+		m.data[i] = 1.0
+	}
+	return m
+}
+
+// Eye 创建单位矩阵
+func Eye(n int) *Tensor {
+	m := NewMatrix(n, n)
+	for i := 0; i < n; i++ {
+		m.Set(1.0, i, i)
+	}
+	return m
+}
+
+// Rand 创建随机矩阵 [0,1)
+func Rand(shape ...int) *Tensor {
+	m := NewMatrix(shape...)
+	rand.Seed(time.Now().UnixNano())
+	for i := range m.data {
+		m.data[i] = rand.Float64()
+	}
+	return m
+}
+
+// Randn 创建标准正态分布随机矩阵
+func Randn(shape ...int) *Tensor {
+	m := NewMatrix(shape...)
+	rand.Seed(time.Now().UnixNano())
+
+	for i := 0; i < len(m.data); i += 2 {
+		// Box-Muller变换
+		u1 := rand.Float64()
+		u2 := rand.Float64()
+		z0 := math.Sqrt(-2*math.Log(u1)) * math.Cos(2*math.Pi*u2)
+		z1 := math.Sqrt(-2*math.Log(u1)) * math.Sin(2*math.Pi*u2)
+
+		m.data[i] = z0
+		if i+1 < len(m.data) {
+			m.data[i+1] = z1
+		}
+	}
+	return m
+}
+
+// Arange 创建等差数列矩阵
+func Arange(start, stop, step float64) *Tensor {
+	size := int(math.Ceil((stop - start) / step))
+	m := NewMatrix(size)
+	for i := 0; i < size; i++ {
+		m.data[i] = start + float64(i)*step
+	}
+	return m
+}
+
+// Linspace 创建线性间隔矩阵
+func Linspace(start, stop float64, num int) *Tensor {
+	m := NewMatrix(num)
+	if num == 1 {
+		m.data[0] = start
+		return m
+	}
+
+	step := (stop - start) / float64(num-1)
+	for i := 0; i < num; i++ {
+		m.data[i] = start + float64(i)*step
+	}
+	return m
+}
+
+// === 索引和访问 ===
+
+// flatIndex 多维索引转一维索引
+func (m *Tensor) flatIndex(indices []int) int {
+	if len(indices) != len(m.shape) {
+		panic(fmt.Sprintf("索引维度 %d 与矩阵维度 %d 不匹配", len(indices), len(m.shape)))
+	}
+
+	index := 0
+	for i, idx := range indices {
+		if idx < 0 || idx >= m.shape[i] {
+			panic(fmt.Sprintf("索引 %d 在维度 %d 上越界 [0, %d)", idx, i, m.shape[i]))
+		}
+		index += idx * m.strides[i]
+	}
+	return index
+}
+
+// Get 获取元素
+func (m *Tensor) Get(indices ...int) float64 {
+	return m.data[m.flatIndex(indices)]
+}
+
+// Set 设置元素
+func (m *Tensor) Set(value float64, indices ...int) {
+	m.data[m.flatIndex(indices)] = value
+}
+
+// Shape 获取形状
+func (m *Tensor) Shape() []int {
+	return append([]int(nil), m.shape...)
+}
+
+// Size 获取总元素数
+func (m *Tensor) Size() int {
+	return m.size
+}
+
+// Ndim 获取维度数
+func (m *Tensor) Ndim() int {
+	return len(m.shape)
+}
+
+// === 基础运算 ===
+
+// Add 矩阵加法（支持广播）
+func (m *Tensor) Add(other *Tensor) *Tensor {
+	if m.sameShape(other) {
+		result := NewMatrix(m.shape...)
+		for i := 0; i < m.size; i++ {
+			result.data[i] = m.data[i] + other.data[i]
+		}
+		return result
+	}
+	// 简单广播支持
+	return m.broadcastOp(other, func(a, b float64) float64 { return a + b })
+}
+
+// Sub 矩阵减法
+func (m *Tensor) Sub(other *Tensor) *Tensor {
+	if m.sameShape(other) {
+		result := NewMatrix(m.shape...)
+		for i := 0; i < m.size; i++ {
+			result.data[i] = m.data[i] - other.data[i]
+		}
+		return result
+	}
+	return m.broadcastOp(other, func(a, b float64) float64 { return a - b })
+}
+
+// Mul 逐元素乘法
+func (m *Tensor) Mul(other *Tensor) *Tensor {
+	if m.sameShape(other) {
+		result := NewMatrix(m.shape...)
+		for i := 0; i < m.size; i++ {
+			result.data[i] = m.data[i] * other.data[i]
+		}
+		return result
+	}
+	return m.broadcastOp(other, func(a, b float64) float64 { return a * b })
+}
+
+// Div 逐元素除法
+func (m *Tensor) Div(other *Tensor) *Tensor {
+	if m.sameShape(other) {
+		result := NewMatrix(m.shape...)
+		for i := 0; i < m.size; i++ {
+			if other.data[i] == 0 {
+				panic("除零错误")
+			}
+			result.data[i] = m.data[i] / other.data[i]
+		}
+		return result
+	}
+	return m.broadcastOp(other, func(a, b float64) float64 {
+		if b == 0 {
+			panic("除零错误")
+		}
+		return a / b
+	})
+}
+
+// 标量运算
+func (m *Tensor) AddScalar(scalar float64) *Tensor {
+	result := NewMatrix(m.shape...)
+	for i := 0; i < m.size; i++ {
+		result.data[i] = m.data[i] + scalar
+	}
+	return result
+}
+
+func (m *Tensor) MulScalar(scalar float64) *Tensor {
+	result := NewMatrix(m.shape...)
+	for i := 0; i < m.size; i++ {
+		result.data[i] = m.data[i] * scalar
+	}
+	return result
+}
+
+func (m *Tensor) DivScalar(scalar float64) *Tensor {
+	if scalar == 0 {
+		panic("标量除零错误")
+	}
+	result := NewMatrix(m.shape...)
+	for i := 0; i < m.size; i++ {
+		result.data[i] = m.data[i] / scalar
+	}
+	return result
+}
+
+// === 矩阵乘法 ===
+
+// Dot 矩阵乘法/点积
+func (m *Tensor) Dot(other *Tensor) *Tensor {
+	// 1D × 1D = 标量点积
+	if len(m.shape) == 1 && len(other.shape) == 1 {
+		if m.shape[0] != other.shape[0] {
+			panic("一维矩阵长度不匹配")
+		}
+		result := NewMatrix(1)
+		sum := 0.0
+		for i := 0; i < m.shape[0]; i++ {
+			sum += m.data[i] * other.data[i]
+		}
+		result.data[0] = sum
+		return result
+	}
+
+	// 2D × 2D = 矩阵乘法
+	if len(m.shape) == 2 && len(other.shape) == 2 {
+		return m.matmul2D(other)
+	}
+
+	// ND × ND = 批量矩阵乘法
+	if len(m.shape) >= 2 && len(other.shape) >= 2 {
+		return m.matmulND(other)
+	}
+
+	panic("不支持的矩阵乘法维度组合")
+}
+
+// 2D矩阵乘法
+func (m *Tensor) matmul2D(other *Tensor) *Tensor {
+	if m.shape[1] != other.shape[0] {
+		panic(fmt.Sprintf("矩阵乘法维度不匹配: (%d,%d) × (%d,%d)",
+			m.shape[0], m.shape[1], other.shape[0], other.shape[1]))
+	}
+
+	rows := m.shape[0]
+	cols := other.shape[1]
+	inner := m.shape[1]
+
+	result := NewMatrix(rows, cols)
+
+	for i := 0; i < rows; i++ {
+		for j := 0; j < cols; j++ {
+			sum := 0.0
+			for k := 0; k < inner; k++ {
+				sum += m.Get(i, k) * other.Get(k, j)
+			}
+			result.Set(sum, i, j)
+		}
+	}
+
+	return result
+}
+
+// ND矩阵乘法（批量）
+func (m *Tensor) matmulND(other *Tensor) *Tensor {
+	// 简化版：假设除了最后两维外其他维度相同
+	mDims := len(m.shape)
+	oDims := len(other.shape)
+
+	if mDims != oDims {
+		panic("高维矩阵乘法要求维度数相同")
+	}
+
+	// 检查批量维度
+	for i := 0; i < mDims-2; i++ {
+		if m.shape[i] != other.shape[i] {
+			panic("批量维度不匹配")
+		}
+	}
+
+	if m.shape[mDims-1] != other.shape[oDims-2] {
+		panic("矩阵乘法内积维度不匹配")
+	}
+
+	// 计算结果形状
+	resultShape := make([]int, mDims)
+	copy(resultShape[:mDims-2], m.shape[:mDims-2])
+	resultShape[mDims-2] = m.shape[mDims-2]
+	resultShape[mDims-1] = other.shape[oDims-1]
+
+	result := NewMatrix(resultShape...)
+
+	// 批量矩阵乘法
+	batchSize := 1
+	for i := 0; i < mDims-2; i++ {
+		batchSize *= m.shape[i]
+	}
+
+	rows := m.shape[mDims-2]
+	cols := other.shape[oDims-1]
+	inner := m.shape[mDims-1]
+
+	for b := 0; b < batchSize; b++ {
+		for i := 0; i < rows; i++ {
+			for j := 0; j < cols; j++ {
+				sum := 0.0
+				for k := 0; k < inner; k++ {
+					// 计算批量索引
+					mIdx := m.getBatchIndex(b, i, k, mDims)
+					oIdx := other.getBatchIndex(b, k, j, oDims)
+					sum += m.data[mIdx] * other.data[oIdx]
+				}
+				rIdx := result.getBatchIndex(b, i, j, mDims)
+				result.data[rIdx] = sum
+			}
+		}
+	}
+
+	return result
+}
+
+func (m *Tensor) getBatchIndex(batch, i, j, dims int) int {
+	// 将批量索引转换为多维索引
+	indices := make([]int, dims)
+
+	// 解析批量索引
+	temp := batch
+	for d := dims - 3; d >= 0; d-- {
+		indices[d] = temp % m.shape[d]
+		temp /= m.shape[d]
+	}
+
+	indices[dims-2] = i
+	indices[dims-1] = j
+
+	return m.flatIndex(indices)
+}
+
+// === 形状操作 ===
+
+// Reshape 重塑形状
+func (m *Tensor) Reshape(newShape ...int) *Tensor {
+	newSize := 1
+	autoIdx := -1
+
+	for i, dim := range newShape {
+		if dim == -1 {
+			if autoIdx != -1 {
+				panic("只能有一个维度为-1")
+			}
+			autoIdx = i
+		} else {
+			newSize *= dim
+		}
+	}
+
+	if autoIdx != -1 {
+		newShape[autoIdx] = m.size / newSize
+		newSize *= newShape[autoIdx]
+	}
+
+	if newSize != m.size {
+		panic(fmt.Sprintf("无法将大小 %d 重塑为 %v", m.size, newShape))
+	}
+
+	result := NewMatrix(newShape...)
+	copy(result.data, m.data)
+	return result
+}
+
+// Transpose 转置
+func (m *Tensor) Transpose(axes ...int) *Tensor {
+	dims := len(m.shape)
+
+	// 默认转置：反转所有轴
+	if len(axes) == 0 {
+		axes = make([]int, dims)
+		for i := 0; i < dims; i++ {
+			axes[i] = dims - 1 - i
+		}
+	}
+
+	if len(axes) != dims {
+		panic("转置轴数量必须等于矩阵维度")
+	}
+
+	// 检查轴的有效性
+	used := make([]bool, dims)
+	for _, axis := range axes {
+		if axis < 0 || axis >= dims {
+			panic(fmt.Sprintf("轴 %d 超出范围 [0, %d)", axis, dims))
+		}
+		if used[axis] {
+			panic(fmt.Sprintf("轴 %d 重复", axis))
+		}
+		used[axis] = true
+	}
+
+	// 计算新形状
+	newShape := make([]int, dims)
+	for i, axis := range axes {
+		newShape[i] = m.shape[axis]
+	}
+
+	result := NewMatrix(newShape...)
+
+	// 转置数据
+	indices := make([]int, dims)
+	m.transposeRecursive(result, indices, 0, axes)
+
+	return result
+}
+
+func (m *Tensor) transposeRecursive(result *Tensor, indices []int, depth int, axes []int) {
+	if depth == len(m.shape) {
+		// 重新排列索引
+		newIndices := make([]int, len(indices))
+		for i, axis := range axes {
+			newIndices[i] = indices[axis]
+		}
+
+		value := m.Get(indices...)
+		result.Set(value, newIndices...)
+		return
+	}
+
+	for i := 0; i < m.shape[depth]; i++ {
+		indices[depth] = i
+		m.transposeRecursive(result, indices, depth+1, axes)
+	}
+}
+
+// Squeeze 压缩维度（移除大小为1的维度）
+func (m *Tensor) Squeeze(axes ...int) *Tensor {
+	newShape := []int{}
+
+	if len(axes) == 0 {
+		// 移除所有大小为1的维度
+		for _, dim := range m.shape {
+			if dim != 1 {
+				newShape = append(newShape, dim)
+			}
+		}
+	} else {
+		// 移除指定轴（必须大小为1）
+		axesSet := make(map[int]bool)
+		for _, axis := range axes {
+			if axis < 0 {
+				axis += len(m.shape)
+			}
+			if axis < 0 || axis >= len(m.shape) {
+				panic("轴索引越界")
+			}
+			if m.shape[axis] != 1 {
+				panic(fmt.Sprintf("无法压缩大小为 %d 的轴", m.shape[axis]))
+			}
+			axesSet[axis] = true
+		}
+
+		for i, dim := range m.shape {
+			if !axesSet[i] {
+				newShape = append(newShape, dim)
+			}
+		}
+	}
+
+	if len(newShape) == 0 {
+		newShape = []int{1}
+	}
+
+	return m.Reshape(newShape...)
+}
+
+// ExpandDims 扩展维度
+func (m *Tensor) ExpandDims(axis int) *Tensor {
+	dims := len(m.shape)
+	if axis < 0 {
+		axis += dims + 1
+	}
+	if axis < 0 || axis > dims {
+		panic("轴索引越界")
+	}
+
+	newShape := make([]int, dims+1)
+	copy(newShape[:axis], m.shape[:axis])
+	newShape[axis] = 1
+	copy(newShape[axis+1:], m.shape[axis:])
+
+	return m.Reshape(newShape...)
+}
+
+// === 统计函数 ===
+
+// Sum 求和（可指定轴）
+func (m *Tensor) Sum(axes ...int) *Tensor {
+	if len(axes) == 0 {
+		// 全部求和
+		result := NewMatrix(1)
+		sum := 0.0
+		for _, val := range m.data {
+			sum += val
+		}
+		result.data[0] = sum
+		return result
+	}
+
+	return m.reduceAxes(axes, func(values []float64) float64 {
+		sum := 0.0
+		for _, val := range values {
+			sum += val
+		}
+		return sum
+	})
+}
+
+// Mean 求平均
+func (m *Tensor) Mean(axes ...int) *Tensor {
+	if len(axes) == 0 {
+		result := NewMatrix(1)
+		sum := 0.0
+		for _, val := range m.data {
+			sum += val
+		}
+		result.data[0] = sum / float64(m.size)
+		return result
+	}
+
+	return m.reduceAxes(axes, func(values []float64) float64 {
+		sum := 0.0
+		for _, val := range values {
+			sum += val
+		}
+		return sum / float64(len(values))
+	})
+}
+
+// Max 求最大值
+func (m *Tensor) Max(axes ...int) *Tensor {
+	if len(axes) == 0 {
+		result := NewMatrix(1)
+		max := m.data[0]
+		for _, val := range m.data[1:] {
+			if val > max {
+				max = val
+			}
+		}
+		result.data[0] = max
+		return result
+	}
+
+	return m.reduceAxes(axes, func(values []float64) float64 {
+		max := values[0]
+		for _, val := range values[1:] {
+			if val > max {
+				max = val
+			}
+		}
+		return max
+	})
+}
+
+// Min 求最小值
+func (m *Tensor) Min(axes ...int) *Tensor {
+	if len(axes) == 0 {
+		result := NewMatrix(1)
+		min := m.data[0]
+		for _, val := range m.data[1:] {
+			if val < min {
+				min = val
+			}
+		}
+		result.data[0] = min
+		return result
+	}
+
+	return m.reduceAxes(axes, func(values []float64) float64 {
+		min := values[0]
+		for _, val := range values[1:] {
+			if val < min {
+				min = val
+			}
+		}
+		return min
+	})
+}
+
+// Std 标准差
+func (m *Tensor) Std(axes ...int) *Tensor {
+	mean := m.Mean(axes...)
+
+	if len(axes) == 0 {
+		// 全局标准差
+		meanVal := mean.data[0]
+		sum := 0.0
+		for _, val := range m.data {
+			diff := val - meanVal
+			sum += diff * diff
+		}
+		result := NewMatrix(1)
+		result.data[0] = math.Sqrt(sum / float64(m.size))
+		return result
+	}
+
+	// TODO: 实现沿轴的标准差计算
+	panic("沿轴标准差计算暂未实现")
+}
+
+// === 数学函数 ===
+
+// Abs 绝对值
+func (m *Tensor) Abs() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		result.data[i] = math.Abs(val)
+	}
+	return result
+}
+
+// Sqrt 平方根
+func (m *Tensor) Sqrt() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		if val < 0 {
+			panic(fmt.Sprintf("负数 %f 无法开平方", val))
+		}
+		result.data[i] = math.Sqrt(val)
+	}
+	return result
+}
+
+// Exp 指数函数
+func (m *Tensor) Exp() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		result.data[i] = math.Exp(val)
+	}
+	return result
+}
+
+// Log 自然对数
+func (m *Tensor) Log() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		if val <= 0 {
+			panic(fmt.Sprintf("非正数 %f 无法取对数", val))
+		}
+		result.data[i] = math.Log(val)
+	}
+	return result
+}
+
+// Sin 正弦
+func (m *Tensor) Sin() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		result.data[i] = math.Sin(val)
+	}
+	return result
+}
+
+// Cos 余弦
+func (m *Tensor) Cos() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		result.data[i] = math.Cos(val)
+	}
+	return result
+}
+
+// Power 幂运算
+func (m *Tensor) Power(exponent float64) *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		result.data[i] = math.Pow(val, exponent)
+	}
+	return result
+}
+
+// === 辅助函数 ===
+
+func (m *Tensor) sameShape(other *Tensor) bool {
+	if len(m.shape) != len(other.shape) {
+		return false
+	}
+	for i, dim := range m.shape {
+		if dim != other.shape[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Tensor) broadcastOp(other *Tensor, op func(float64, float64) float64) *Tensor {
+	// 简化的广播：只支持标量广播
+	if other.size == 1 {
+		result := NewMatrix(m.shape...)
+		scalar := other.data[0]
+		for i, val := range m.data {
+			result.data[i] = op(val, scalar)
+		}
+		return result
+	}
+
+	if m.size == 1 {
+		result := NewMatrix(other.shape...)
+		scalar := m.data[0]
+		for i, val := range other.data {
+			result.data[i] = op(scalar, val)
+		}
+		return result
+	}
+
+	panic("复杂广播暂未实现")
+}
+
+func (m *Tensor) reduceAxes(axes []int, reduceFunc func([]float64) float64) *Tensor {
+	// 简化实现：仅支持单轴
+	if len(axes) != 1 {
+		panic("多轴缩减暂未实现")
+	}
+
+	axis := axes[0]
+	if axis < 0 {
+		axis += len(m.shape)
+	}
+	if axis < 0 || axis >= len(m.shape) {
+		panic("轴索引越界")
+	}
+
+	// 计算结果形状
+	newShape := make([]int, 0, len(m.shape)-1)
+	for i, dim := range m.shape {
+		if i != axis {
+			newShape = append(newShape, dim)
+		}
+	}
+	if len(newShape) == 0 {
+		newShape = []int{1}
+	}
+
+	result := NewMatrix(newShape...)
+
+	// 简化实现：仅适用于2D矩阵的行/列缩减
+	if len(m.shape) == 2 {
+		if axis == 0 { // 按列求值
+			for j := 0; j < m.shape[1]; j++ {
+				values := make([]float64, m.shape[0])
+				for i := 0; i < m.shape[0]; i++ {
+					values[i] = m.Get(i, j)
+				}
+				result.Set(reduceFunc(values), j)
+			}
+		} else { // 按行求值
+			for i := 0; i < m.shape[0]; i++ {
+				values := make([]float64, m.shape[1])
+				for j := 0; j < m.shape[1]; j++ {
+					values[j] = m.Get(i, j)
+				}
+				result.Set(reduceFunc(values), i)
+			}
+		}
+	}
+
+	return result
+}
+
+// Clone 克隆矩阵
+func (m *Tensor) Clone() *Tensor {
+	result := NewMatrix(m.shape...)
+	copy(result.data, m.data)
+	return result
+}
+
+// Print 打印矩阵
+func (m *Tensor) Print() {
+	switch len(m.shape) {
+	case 0:
+		fmt.Printf("标量: %.4f\n", m.data[0])
+	case 1:
+		fmt.Print("向量: [")
+		for i, val := range m.data {
+			if i > 0 {
+				fmt.Print(" ")
+			}
+			fmt.Printf("%.4f", val)
+		}
+		fmt.Println("]")
+	case 2:
+		fmt.Printf("矩阵 (%dx%d):\n", m.shape[0], m.shape[1])
+		for i := 0; i < m.shape[0]; i++ {
+			fmt.Print("[")
+			for j := 0; j < m.shape[1]; j++ {
+				if j > 0 {
+					fmt.Print(" ")
+				}
+				fmt.Printf("%8.4f", m.Get(i, j))
+			}
+			fmt.Println("]")
+		}
+	default:
+		fmt.Printf("张量(shape=%v, size=%d):\n", m.shape, m.size)
+		// 只打印前几个元素
+		n := 10
+		if m.size < n {
+			n = m.size
+		}
+		fmt.Print("数据: [")
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				fmt.Print(" ")
+			}
+			fmt.Printf("%.4f", m.data[i])
+		}
+		if m.size > n {
+			fmt.Print(" ...")
+		}
+		fmt.Println("]")
+	}
+}
+
+// === 激活函数 ===
+
+// ReLU 激活函数
+func (m *Tensor) ReLU() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		if val > 0 {
+			result.data[i] = val
+		} else {
+			result.data[i] = 0
+		}
+	}
+	return result
+}
+
+// GELU 激活函数 (Transformer常用)
+func (m *Tensor) GELU() *Tensor {
+	result := NewMatrix(m.shape...)
+	for i, val := range m.data {
+		// GELU(x) = 0.5 * x * (1 + tanh(√(2/π) * (x + 0.044715 * x³)))
+		x3 := val * val * val
+		inner := math.Sqrt(2.0/math.Pi) * (val + 0.044715*x3)
+		result.data[i] = 0.5 * val * (1.0 + math.Tanh(inner))
+	}
+	return result
+}
+
+// Softmax 激活函数 (注意力机制核心)
+func (m *Tensor) Softmax(axis int) *Tensor {
+	if axis < 0 {
+		axis += len(m.shape)
+	}
+
+	result := m.Clone()
+
+	// 简化实现：仅支持最后一个维度的 softmax
+	if axis == len(m.shape)-1 {
+		// 对于2D矩阵，按行计算softmax
+		if len(m.shape) == 2 {
+			for i := 0; i < m.shape[0]; i++ {
+				// 找到该行的最大值（数值稳定性）
+				maxVal := result.Get(i, 0)
+				for j := 1; j < m.shape[1]; j++ {
+					if val := result.Get(i, j); val > maxVal {
+						maxVal = val
+					}
+				}
+
+				// 计算 exp(x - max) 的和
+				sum := 0.0
+				for j := 0; j < m.shape[1]; j++ {
+					val := math.Exp(result.Get(i, j) - maxVal)
+					result.Set(val, i, j)
+					sum += val
+				}
+
+				// 归一化
+				for j := 0; j < m.shape[1]; j++ {
+					result.Set(result.Get(i, j)/sum, i, j)
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// === 张量操作扩展 ===
+
+// Concat 张量连接
+func (m *Tensor) Concat(other *Tensor, axis int) *Tensor {
+	if axis < 0 {
+		axis += len(m.shape)
+	}
+
+	// 检查除连接轴外的其他维度是否匹配
+	for i := 0; i < len(m.shape); i++ {
+		if i != axis && m.shape[i] != other.shape[i] {
+			panic(fmt.Sprintf("维度 %d 不匹配: %d vs %d", i, m.shape[i], other.shape[i]))
+		}
+	}
+
+	// 计算结果形状
+	resultShape := make([]int, len(m.shape))
+	copy(resultShape, m.shape)
+	resultShape[axis] += other.shape[axis]
+
+	result := NewMatrix(resultShape...)
+
+	// 简化实现：仅支持2D矩阵的行/列连接
+	if len(m.shape) == 2 {
+		if axis == 0 { // 垂直连接
+			for i := 0; i < m.shape[0]; i++ {
+				for j := 0; j < m.shape[1]; j++ {
+					result.Set(m.Get(i, j), i, j)
+				}
+			}
+			for i := 0; i < other.shape[0]; i++ {
+				for j := 0; j < other.shape[1]; j++ {
+					result.Set(other.Get(i, j), i+m.shape[0], j)
+				}
+			}
+		} else { // 水平连接
+			for i := 0; i < m.shape[0]; i++ {
+				for j := 0; j < m.shape[1]; j++ {
+					result.Set(m.Get(i, j), i, j)
+				}
+				for j := 0; j < other.shape[1]; j++ {
+					result.Set(other.Get(i, j), i, j+m.shape[1])
+				}
+			}
+		}
+	}
+
+	return result
+}
+
+// Split 张量分割
+func (m *Tensor) Split(splitSize int, axis int) []*Tensor {
+	if axis < 0 {
+		axis += len(m.shape)
+	}
+
+	if m.shape[axis]%splitSize != 0 {
+		panic("分割大小必须能整除该维度")
+	}
+
+	numSplits := m.shape[axis] / splitSize
+	results := make([]*Tensor, numSplits)
+
+	// 简化实现：仅支持2D矩阵的分割
+	if len(m.shape) == 2 {
+		for k := 0; k < numSplits; k++ {
+			if axis == 0 { // 按行分割
+				newShape := []int{splitSize, m.shape[1]}
+				results[k] = NewMatrix(newShape...)
+				for i := 0; i < splitSize; i++ {
+					for j := 0; j < m.shape[1]; j++ {
+						results[k].Set(m.Get(k*splitSize+i, j), i, j)
+					}
+				}
+			} else { // 按列分割
+				newShape := []int{m.shape[0], splitSize}
+				results[k] = NewMatrix(newShape...)
+				for i := 0; i < m.shape[0]; i++ {
+					for j := 0; j < splitSize; j++ {
+						results[k].Set(m.Get(i, k*splitSize+j), i, j)
+					}
+				}
+			}
+		}
+	}
+
+	return results
+}
+
+// === 掩码操作 ===
+
+// MaskedFill 根据掩码填充值
+func (m *Tensor) MaskedFill(mask *Tensor, value float64) *Tensor {
+	if !m.sameShape(mask) {
+		panic("矩阵和掩码形状不匹配")
+	}
+
+	result := m.Clone()
+	for i := 0; i < m.size; i++ {
+		if mask.data[i] != 0 { // 掩码非零处填充
+			result.data[i] = value
+		}
+	}
+	return result
+}
+
+// CreateCausalMask 创建因果掩码（下三角掩码）
+func CreateCausalMask(seqLen int) *Tensor {
+	mask := NewMatrix(seqLen, seqLen)
+	for i := 0; i < seqLen; i++ {
+		for j := 0; j < seqLen; j++ {
+			if j > i { // 上三角部分设为负无穷大（或很大的负数）
+				mask.Set(-1e9, i, j)
+			}
+		}
+	}
+	return mask
+}
+
+// === 位置编码相关 ===
+
+// CreatePositionalEncoding 创建位置编码
+func CreatePositionalEncoding(maxLen, dModel int) *Tensor {
+	pe := NewMatrix(maxLen, dModel)
+
+	for pos := 0; pos < maxLen; pos++ {
+		for i := 0; i < dModel/2; i++ {
+			angle := float64(pos) / math.Pow(10000, 2*float64(i)/float64(dModel))
+			pe.Set(math.Sin(angle), pos, 2*i)
+			pe.Set(math.Cos(angle), pos, 2*i+1)
+		}
+	}
+
+	return pe
+}
+
+// === 批量操作 ===
+
+// BatchMatMul 批量矩阵乘法（优化版）
+func (m *Tensor) BatchMatMul(other *Tensor) *Tensor {
+	// 假设输入形状为 [batch, seq_len, d_model]
+	if len(m.shape) != 3 || len(other.shape) != 3 {
+		panic("批量矩阵乘法需要3D张量")
+	}
+
+	if m.shape[0] != other.shape[0] {
+		panic("批量大小不匹配")
+	}
+
+	if m.shape[2] != other.shape[1] {
+		panic("矩阵乘法维度不匹配")
+	}
+
+	batchSize := m.shape[0]
+	m1 := m.shape[1]
+	k := m.shape[2]
+	n2 := other.shape[2]
+
+	result := NewMatrix(batchSize, m1, n2)
+
+	for b := 0; b < batchSize; b++ {
+		for i := 0; i < m1; i++ {
+			for j := 0; j < n2; j++ {
+				sum := 0.0
+				for kk := 0; kk < k; kk++ {
+					sum += m.Get(b, i, kk) * other.Get(b, kk, j)
+				}
+				result.Set(sum, b, i, j)
+			}
+		}
+	}
+
+	return result
+}
+
+// === 层归一化 ===
+
+// LayerNorm 层归一化
+func (m *Tensor) LayerNorm(gamma, beta *Tensor, eps float64) *Tensor {
+	// 对最后一个维度进行归一化
+	lastDim := len(m.shape) - 1
+
+	// 计算均值和方差
+	mean := m.Mean(lastDim)
+
+	// 计算方差（需要广播）
+	diff := m.Sub(mean.ExpandDims(lastDim))
+	variance := diff.Mul(diff).Mean(lastDim)
+
+	// 标准化
+	std := variance.AddScalar(eps).Sqrt()
+	normalized := diff.Div(std.ExpandDims(lastDim))
+
+	// 缩放和平移
+	if gamma != nil {
+		normalized = normalized.Mul(gamma)
+	}
+	if beta != nil {
+		normalized = normalized.Add(beta)
+	}
+
+	return normalized
+}
+
+// === 梯度相关（用于反向传播） ===
+
+// Backward 简化的反向传播标记
+func (m *Tensor) Backward() *Tensor {
+	// 创建与输入同形状的梯度矩阵（全1）
+	grad := Ones(m.shape...)
+	return grad
+}
+
+// === 数据类型转换和工具函数 ===
+
+// ToFloat32 转换为float32切片（用于与其他库交互）
+func (m *Tensor) ToFloat32() []float32 {
+	result := make([]float32, m.size)
+	for i, val := range m.data {
+		result[i] = float32(val)
+	}
+	return result
+}
+
+// FromFloat32 从float32切片创建矩阵
+func FromFloat32(data []float32, shape ...int) *Tensor {
+	float64Data := make([]float64, len(data))
+	for i, val := range data {
+		float64Data[i] = float64(val)
+	}
+	return NewMatrixFromData(float64Data, shape...)
+}
+
+// === 性能优化建议的方法签名 ===
+
+// TODO: 以下方法需要具体实现以提高性能
+
+// Gemm 通用矩阵乘法（可调用BLAS库）
+func (m *Tensor) Gemm(other *Tensor, alpha, beta float64, transA, transB bool) *Tensor {
+	// 如果可能，这里应该调用优化的BLAS库
+	// 目前使用基础实现
+	if transA {
+		m = m.Transpose()
+	}
+	if transB {
+		other = other.Transpose()
+	}
+	result := m.Dot(other).MulScalar(alpha)
+	if beta != 0 {
+		// 需要添加C矩阵
+	}
+	return result
+}
+
+// InplaceAdd 原地加法（减少内存分配）
+func (m *Tensor) InplaceAdd(other *Tensor) {
+	if !m.sameShape(other) {
+		panic("形状不匹配")
+	}
+	for i := 0; i < m.size; i++ {
+		m.data[i] += other.data[i]
+	}
+}
+
+// InplaceMulScalar 原地标量乘法
+func (m *Tensor) InplaceMulScalar(scalar float64) {
+	for i := 0; i < m.size; i++ {
+		m.data[i] *= scalar
+	}
+}
