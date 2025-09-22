@@ -5,7 +5,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer/core"
 	"github.com/pplmx/algo-go/llm/transformer/layer"
-	test_core "github.com/pplmx/algo-go/tests/llm/helpers"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestPositionalEncoding_Forward(t *testing.T) {
@@ -18,47 +18,51 @@ func TestPositionalEncoding_Forward(t *testing.T) {
 	pe := layer.NewPositionalEncoding(maxSeqLen, dModel)
 
 	// 3. 准备输入数据 (全零矩阵)
-	input := make(core.Matrix, seqLen)
-	for i := range input {
-		input[i] = make([]float64, dModel)
-	}
+	input := core.Zeros(1, seqLen, dModel)
 
 	// 4. 执行前向传播
-	output := pe.Forward(input)
+	output := pe.Forward(input, seqLen)
 
 	// 5. 验证输出维度
-	if len(output) != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", len(output), seqLen)
+	if output.Shape()[1] != seqLen {
+		t.Errorf("Output sequence length = %d, want %d", output.Shape()[1], seqLen)
 	}
-	if len(output[0]) != dModel {
-		t.Errorf("Output dimension = %d, want %d", len(output[0]), dModel)
+	if output.Shape()[2] != dModel {
+		t.Errorf("Output dimension = %d, want %d", output.Shape()[2], dModel)
 	}
 
 	// 6. 验证输出是否等于位置编码本身 (因为输入是零)
-	expectedOutput := make(core.Matrix, seqLen)
+	expectedOutput := core.NewTensor(1, seqLen, dModel)
 	for i := 0; i < seqLen; i++ {
-		expectedOutput[i] = pe.Encoding[i]
+		for j := 0; j < dModel; j++ {
+			expectedOutput.Set(pe.Encoding.Get(i, j), 0, i, j)
+		}
 	}
 
-	if !test_core.MatricesAlmostEqual(output, expectedOutput, 1e-9) {
+	if !helpers.TensorsAlmostEqual(output, expectedOutput, 1e-9) {
 		t.Errorf("Output is not equal to the positional encoding.\nGot:  %v\nWant: %v", output, expectedOutput)
 	}
 
 	// 7. 验证编码值范围
-	for _, row := range output {
-		for _, val := range row {
-			if val < -1.0 || val > 1.0 {
-				t.Errorf("Positional encoding value %f is outside the expected range [-1, 1]", val)
+	for i := 0; i < output.Shape()[0]; i++ {
+		for j := 0; j < output.Shape()[1]; j++ {
+			for k := 0; k < output.Shape()[2]; k++ {
+				val := output.Get(i, j, k)
+				if val < -1.0 || val > 1.0 {
+					t.Errorf("Positional encoding value %f is outside the expected range [-1, 1]", val)
+				}
 			}
 		}
 	}
 
 	// 8. 验证输入不被修改
-	for _, row := range input {
-		for _, val := range row {
-			if val != 0 {
-				t.Errorf("Input matrix was modified during forward pass")
-				break
+	for i := 0; i < input.Shape()[0]; i++ {
+		for j := 0; j < input.Shape()[1]; j++ {
+			for k := 0; k < input.Shape()[2]; k++ {
+				if input.Get(i, j, k) != 0 {
+					t.Errorf("Input matrix was modified during forward pass")
+					break
+				}
 			}
 		}
 	}

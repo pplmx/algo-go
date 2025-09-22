@@ -2,87 +2,63 @@ package core
 
 import (
 	"math"
-
-	"github.com/pplmx/algo-go/llm/transformer/config"
 )
 
-// Adam 优化器
+// AdamOptimizer implements the Adam optimization algorithm.
 type AdamOptimizer struct {
-	Config config.TrainConfig
-	Step   int
-	m      Matrix // First moment estimates
-	v      Matrix // Second moment estimates
+	LearningRate float64
+	Beta1        float64
+	Beta2        float64
+	Epsilon      float64
+	t            int
+	m            *Tensor // First moment estimates
+	v            *Tensor // Second moment estimates
 }
 
 // NewAdamOptimizer creates a new AdamOptimizer.
-func NewAdamOptimizer(cfg config.TrainConfig) *AdamOptimizer {
+func NewAdamOptimizer(learningRate, beta1, beta2, epsilon float64) *AdamOptimizer {
 	return &AdamOptimizer{
-		Config: cfg,
-		Step:   0,
+		LearningRate: learningRate,
+		Beta1:        beta1,
+		Beta2:        beta2,
+		Epsilon:      epsilon,
+		t:            0,
 	}
 }
 
-// Update applies the Adam optimization step to the given parameter and gradient.
-// It manages its internal moment estimates (m and v) automatically.
-func (a *AdamOptimizer) Update(param, grad Matrix) {
-	a.Step++
-
-	// Initialize m and v if they are nil (first update)
-	if a.m == nil || len(a.m) != len(param) || len(a.m[0]) != len(param[0]) {
-		a.m = Zeros(len(param), len(param[0]))
-		a.v = Zeros(len(param), len(param[0]))
+// Update updates the parameters using the Adam optimization algorithm.
+func (a *AdamOptimizer) Update(param, grad *Tensor) {
+	if a.m == nil {
+		a.m = Zeros(param.Shape()...)
+		a.v = Zeros(param.Shape()...)
 	}
 
-	// 更新一阶矩估计
-	for i := range a.m {
-		for j := range a.m[i] {
-			a.m[i][j] = a.Config.Beta1*a.m[i][j] + (1-a.Config.Beta1)*grad[i][j]
-		}
-	}
+	a.t++
 
-	// 更新二阶矩估计
-	for i := range a.v {
-		for j := range a.v[i] {
-			a.v[i][j] = a.Config.Beta2*a.v[i][j] + (1-a.Config.Beta2)*grad[i][j]*grad[i][j]
-		}
-	}
+	// Update biased first moment estimate
+	a.m = a.m.MulScalar(a.Beta1).Add(grad.MulScalar(1 - a.Beta1))
 
-	// 计算偏差校正
-	mHat := make(Matrix, len(a.m))
-	vHat := make(Matrix, len(a.v))
-	for i := range a.m {
-		mHat[i] = make([]float64, len(a.m[i]))
-		vHat[i] = make([]float64, len(a.v[i]))
-		for j := range a.m[i] {
-			mHat[i][j] = a.m[i][j] / (1 - math.Pow(a.Config.Beta1, float64(a.Step)))
-			vHat[i][j] = a.v[i][j] / (1 - math.Pow(a.Config.Beta2, float64(a.Step)))
-		}
-	}
+	// Update biased second raw moment estimate
+	a.v = a.v.MulScalar(a.Beta2).Add(grad.Power(2).MulScalar(1 - a.Beta2))
 
-	// 更新参数
-	for i := range param {
-		for j := range param[i] {
-			param[i][j] -= a.Config.LearningRate * mHat[i][j] / (math.Sqrt(vHat[i][j]) + a.Config.Eps)
-		}
+	// Compute bias-corrected first moment estimate
+	mHat := a.m.DivScalar(1 - math.Pow(a.Beta1, float64(a.t)))
+
+	// Compute bias-corrected second raw moment estimate
+	vHat := a.v.DivScalar(1 - math.Pow(a.Beta2, float64(a.t)))
+
+	// Update parameters in place
+	for i := 0; i < param.Size(); i++ {
+		param.data[i] -= a.LearningRate * mHat.data[i] / (math.Sqrt(vHat.data[i]) + a.Epsilon)
 	}
 }
 
-// AdamOptimizer does not have trainable parameters in the traditional sense,
-// but it manages internal state (m, v) that needs to be zeroed or reset.
-// For simplicity, we'll make it conform to Trainable interface by returning its internal state.
-func (a *AdamOptimizer) GetParameters() []Matrix {
-	// Return empty slice as optimizer itself doesn't have parameters to optimize
-	return []Matrix{}
+func (a *AdamOptimizer) GetParameters() []*Tensor {
+	// Optimizers don't have parameters in the same way layers do.
+	return []*Tensor{}
 }
 
-func (a *AdamOptimizer) GetGradients() []Matrix {
-	// Return empty slice as optimizer itself doesn't have gradients
-	return []Matrix{}
-}
-
-func (a *AdamOptimizer) ZeroGradients() {
-	// Reset internal state m and v
-	a.m = nil
-	a.v = nil
-	a.Step = 0
+func (a *AdamOptimizer) GetGradients() []*Tensor {
+	// Optimizers don't have gradients in the same way layers do.
+	return []*Tensor{}
 }

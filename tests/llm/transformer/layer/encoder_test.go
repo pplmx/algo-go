@@ -26,21 +26,22 @@ func TestTransformerEncoderLayer_Forward(t *testing.T) {
 	encoderLayer.SetTraining(false)
 
 	// 3. 准备输入数据
-	input := core.Matrix{
-		{1, 2, 3, 4, 5, 6, 7, 8},
-		{8, 7, 6, 5, 4, 3, 2, 1},
-		{1, 3, 5, 7, 9, 2, 4, 6},
+	inputData := []float64{
+		1, 2, 3, 4, 5, 6, 7, 8,
+		8, 7, 6, 5, 4, 3, 2, 1,
+		1, 3, 5, 7, 9, 2, 4, 6,
 	}
+	input := core.NewTensorFromData(inputData, seqLen, cfg.DModel)
 
 	// 4. 执行前向传播
 	output, attnWeights := encoderLayer.Forward(input, nil)
 
 	// 5. 验证输出维度
-	if len(output) != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", len(output), seqLen)
+	if output.Shape()[0] != seqLen {
+		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
 	}
-	if len(output[0]) != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", len(output[0]), cfg.DModel)
+	if output.Shape()[1] != cfg.DModel {
+		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
 	}
 
 	// 6. 验证注意力权重维度
@@ -69,11 +70,11 @@ func TestTransformerEncoder_Forward(t *testing.T) {
 	encoder.SetTraining(false)
 
 	// 3. 准备输入数据
-	input := make(core.Matrix, seqLen)
+	input := make([][]int, seqLen)
 	for i := range input {
-		input[i] = make([]float64, cfg.DModel)
+		input[i] = make([]int, cfg.DModel)
 		for j := range input[i] {
-			input[i][j] = float64(i*cfg.DModel + j)
+			input[i][j] = i*cfg.DModel + j
 		}
 	}
 
@@ -81,11 +82,11 @@ func TestTransformerEncoder_Forward(t *testing.T) {
 	output, allAttnWeights := encoder.Forward(input, nil)
 
 	// 5. 验证输出维度
-	if len(output) != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", len(output), seqLen)
+	if output.Shape()[0] != seqLen {
+		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
 	}
-	if len(output[0]) != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", len(output[0]), cfg.DModel)
+	if output.Shape()[1] != cfg.DModel {
+		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
 	}
 
 	// 6. 验证注意力权重维度

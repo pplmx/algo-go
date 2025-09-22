@@ -5,7 +5,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer/core"
 	"github.com/pplmx/algo-go/llm/transformer/layer"
-	test_core "github.com/pplmx/algo-go/tests/llm/helpers"
+	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
 func TestResidualConnection_Forward(t *testing.T) {
@@ -16,18 +16,12 @@ func TestResidualConnection_Forward(t *testing.T) {
 	residual.SetTraining(false) // 关闭 dropout
 
 	// 2. 准备输入数据
-	x := core.Matrix{
-		{1, 2, 3},
-		{4, 5, 6},
-	}
-	sublayerOutput := core.Matrix{
-		{0.1, 0.2, 0.3},
-		{-0.1, -0.2, -0.3},
-	}
+	x := core.NewTensorFromData([]float64{1, 2, 3, 4, 5, 6}, 2, 3)
+	sublayerOutput := core.NewTensorFromData([]float64{0.1, 0.2, 0.3, -0.1, -0.2, -0.3}, 2, 3)
 
 	// 3. 计算预期输出
 	// a. Add
-	added := core.AddMatrices(x, sublayerOutput)
+	added := x.Add(sublayerOutput)
 	// b. Norm
 	// Manually perform layer normalization on `added`
 	ln := core.NewLayerNorm(dModel, 1e-5)
@@ -37,7 +31,7 @@ func TestResidualConnection_Forward(t *testing.T) {
 	output := residual.Forward(x, sublayerOutput)
 
 	// 5. 验证结果
-	if !test_core.MatricesAlmostEqual(output, expectedOutput, 1e-9) {
+	if !helpers.TensorsAlmostEqual(output, expectedOutput, 1e-9) {
 		t.Errorf("Forward() output = %v, want %v", output, expectedOutput)
 	}
 }

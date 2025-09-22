@@ -233,112 +233,148 @@ func (t *Tensor) Set(value float64, indices ...int) {
 	t.data[t.flatIndex(indices)] = value
 }
 
+// Slice extracts a slice from the tensor.
+func (t *Tensor) Slice(indices ...int) *Tensor {
+	// This is a simplified slice that only supports slicing along the first dimension.
+	if len(indices) != 2 {
+		panic("Slice only supports 2 arguments for the first dimension")
+	}
+	start, end := indices[0], indices[1]
+	if start < 0 || end > t.shape[0] || start > end {
+		panic("Invalid slice indices")
+	}
+
+	newShape := make([]int, t.Ndim())
+	copy(newShape, t.shape)
+	newShape[0] = end - start
+
+	newData := t.data[start*t.strides[0] : end*t.strides[0]]
+	return NewTensorFromData(newData, newShape...)
+}
+
 // =================================================================================================
 // == 元素级数学运算 (Element-wise Math Operations) ==
 // =================================================================================================
 
-// Add 执行元素级加法。支持广播。返回一个新的张量。
+// Add performs element-wise addition. Supports broadcasting. Returns a new tensor.
 func (t *Tensor) Add(other *Tensor) *Tensor {
-	return t._elementWiseOp(other, func(a, b float64) float64 { return a + b })
+	return t._elementWiseOp(other, func(a, b float64) float64 { return a + b }, false)
 }
 
-// Sub 执行元素级减法。支持广播。返回一个新的张量。
+// Sub performs element-wise subtraction. Supports broadcasting. Returns a new tensor.
 func (t *Tensor) Sub(other *Tensor) *Tensor {
-	return t._elementWiseOp(other, func(a, b float64) float64 { return a - b })
+	return t._elementWiseOp(other, func(a, b float64) float64 { return a - b }, false)
 }
 
-// Mul 执行元素级乘法。支持广播。返回一个新的张量。
+// Mul performs element-wise multiplication. Supports broadcasting. Returns a new tensor.
 func (t *Tensor) Mul(other *Tensor) *Tensor {
-	return t._elementWiseOp(other, func(a, b float64) float64 { return a * b })
+	return t._elementWiseOp(other, func(a, b float64) float64 { return a * b }, false)
 }
 
-// Div 执行元素级除法。支持广播。返回一个新的张量。
+// Div performs element-wise division. Supports broadcasting. Returns a new tensor.
 func (t *Tensor) Div(other *Tensor) *Tensor {
 	return t._elementWiseOp(other, func(a, b float64) float64 {
 		if b == 0 {
 			panic("division by zero")
 		}
 		return a / b
-	})
+	}, false)
 }
 
-// AddScalar 将张量中的每个元素与一个标量相加。返回一个新的张量。
+// AddScalar adds a scalar to each element of the tensor. Returns a new tensor.
 func (t *Tensor) AddScalar(scalar float64) *Tensor {
-	result := NewTensor(t.shape...)
-	for i := range t.data {
-		result.data[i] = t.data[i] + scalar
-	}
-	return result
+	return t._elementWiseScalarOp(scalar, func(a, b float64) float64 { return a + b }, false)
 }
 
-// MulScalar 将张量中的每个元素与一个标量相乘。返回一个新的张量。
+// MulScalar multiplies each element of the tensor by a scalar. Returns a new tensor.
 func (t *Tensor) MulScalar(scalar float64) *Tensor {
-	result := NewTensor(t.shape...)
-	for i := range t.data {
-		result.data[i] = t.data[i] * scalar
-	}
-	return result
+	return t._elementWiseScalarOp(scalar, func(a, b float64) float64 { return a * b }, false)
 }
 
-// DivScalar 将张量中的每个元素除以一个标量。返回一个新的张量。
+// DivScalar divides each element of the tensor by a scalar. Returns a new tensor.
 func (t *Tensor) DivScalar(scalar float64) *Tensor {
 	if scalar == 0 {
 		panic("scalar division by zero")
 	}
-	result := NewTensor(t.shape...)
-	for i := range t.data {
-		result.data[i] = t.data[i] / scalar
-	}
-	return result
+	return t._elementWiseScalarOp(scalar, func(a, b float64) float64 { return a / b }, false)
 }
 
-// Power 计算张量中每个元素的 `exponent` 次幂。返回一个新的张量。
+// Power computes the exponent of each element of the tensor. Returns a new tensor.
 func (t *Tensor) Power(exponent float64) *Tensor {
-	result := NewTensor(t.shape...)
-	for i, val := range t.data {
-		result.data[i] = math.Pow(val, exponent)
-	}
-	return result
+	return t._elementWiseScalarOp(exponent, func(a, b float64) float64 { return math.Pow(a, b) }, false)
 }
 
-// Abs 计算张量中每个元素的绝对值。返回一个新的张量。
+// Abs computes the absolute value of each element of the tensor. Returns a new tensor.
 func (t *Tensor) Abs() *Tensor {
-	result := NewTensor(t.shape...)
-	for i, val := range t.data {
-		result.data[i] = math.Abs(val)
-	}
-	return result
+	return t._elementWiseOp(nil, func(a, b float64) float64 { return math.Abs(a) }, false)
 }
 
-// Sqrt 计算张量中每个元素的平方根。返回一个新的张量。
-func (t *Tensor) Sqrt() *Tensor {
-	result := NewTensor(t.shape...)
-	for i, val := range t.data {
-		if val < 0 {
-			panic(fmt.Sprintf("domain error: cannot compute square root of negative number %f", val))
-		}
-		result.data[i] = math.Sqrt(val)
-	}
-	return result
-}
-
-// Exp 计算张量中每个元素的自然指数 (e^x)。返回一个新的张量。
+// Exp computes the exponential of each element of the tensor. Returns a new tensor.
 func (t *Tensor) Exp() *Tensor {
-	result := NewTensor(t.shape...)
-	for i, val := range t.data {
-		result.data[i] = math.Exp(val)
+	return t._elementWiseOp(nil, func(a, b float64) float64 { return math.Exp(a) }, false)
+}
+
+// Log computes the natural logarithm of each element of the tensor. Returns a new tensor.
+func (t *Tensor) Log() *Tensor {
+	return t._elementWiseOp(nil, func(a, b float64) float64 { return math.Log(a) }, false)
+}
+
+// Sqrt computes the square root of each element of the tensor. Returns a new tensor.
+func (t *Tensor) Sqrt() *Tensor {
+	return t._elementWiseOp(nil, func(a, b float64) float64 { return math.Sqrt(a) }, false)
+}
+
+// _elementWiseOp is the generalized element-wise operation.
+func (t *Tensor) _elementWiseOp(other *Tensor, op func(a, b float64) float64, inPlace bool) *Tensor {
+	var result *Tensor
+	if inPlace {
+		result = t
+	} else {
+		result = t.Clone()
 	}
+
+	if other == nil {
+		// Unary operation
+		for i := 0; i < t.size; i++ {
+			result.data[i] = op(t.data[i], 0) // 0 is a dummy value for unary ops
+		}
+		return result
+	}
+
+	if t.sameShape(other) {
+		for i := 0; i < t.size; i++ {
+			result.data[i] = op(t.data[i], other.data[i])
+		}
+		return result
+	}
+
+	// Broadcasting logic (simplified)
+	resultShape, broadcastA, broadcastB := broadcastShapes(t.shape, other.shape)
+	if !inPlace {
+		result = NewTensor(resultShape...)
+	}
+
+	aIter := newBroadcastIterator(t, broadcastA)
+	bIter := newBroadcastIterator(other, broadcastB)
+
+	for i := 0; i < result.size; i++ {
+		result.data[i] = op(aIter.Next(), bIter.Next())
+	}
+
 	return result
 }
 
-// Log 计算张量中每个元素的自然对数 (ln(x))。返回一个新的张量。
-func (t *Tensor) Log() *Tensor {
-	result := NewTensor(t.shape...)
-	for i, val := range t.data {
-		if val <= 0 {
-			panic(fmt.Sprintf("domain error: cannot compute logarithm of non-positive number %f", val))
-		}
-		result.data[i] = math.Log(val)
+// _elementWiseScalarOp is the generalized element-wise scalar operation.
+func (t *Tensor) _elementWiseScalarOp(scalar float64, op func(a, b float64) float64, inPlace bool) *Tensor {
+	var result *Tensor
+	if inPlace {
+		result = t
+	} else {
+		result = t.Clone()
+	}
+
+	for i := 0; i < t.size; i++ {
+		result.data[i] = op(t.data[i], scalar)
 	}
 	return result
 }
@@ -440,10 +476,10 @@ func (t *Tensor) batchMatMul(other *Tensor) *Tensor {
 				sum := 0.0
 				for k := 0; k < innerDim; k++ {
 					// a[b, i, k] * b[b, k, j]
-					sum += t.data[offsetA + i*innerDim + k] * other.data[offsetB + k*colsB + j]
+					sum += t.data[offsetA+i*innerDim+k] * other.data[offsetB+k*colsB+j]
 				}
 				// result[b, i, j]
-				result.data[offsetR + i*colsB + j] = sum
+				result.data[offsetR+i*colsB+j] = sum
 			}
 		}
 	}
@@ -562,7 +598,6 @@ func (t *Tensor) transposeRecursive(result *Tensor, indices []int, depth int, ax
 	}
 }
 
-
 // Squeeze 移除张量中大小为 1 的维度。
 // 如果不提供 `axes`，则移除所有大小为 1 的维度。
 // 如果提供了 `axes`，则只尝试移除指定的维度。
@@ -624,7 +659,6 @@ func (t *Tensor) ExpandDims(axis int) *Tensor {
 
 	return t.Reshape(newShape...)
 }
-
 
 // =================================================================================================
 // == 统计与归约 (Statistics & Reductions) ==
@@ -703,7 +737,6 @@ func (t *Tensor) Max(axes ...int) *Tensor {
 		return max
 	})
 }
-
 
 // =================================================================================================
 // == ML 相关函数 (ML-related Functions) ==
@@ -791,15 +824,22 @@ func (t *Tensor) LayerNorm(gamma, beta *Tensor, eps float64) *Tensor {
 
 	// 缩放和平移
 	if gamma != nil {
-		normalized = normalized.Mul(gamma)
+		expandedGamma := gamma
+		for i := 0; i < normalized.Ndim()-gamma.Ndim(); i++ {
+			expandedGamma = expandedGamma.ExpandDims(0)
+		}
+		normalized = normalized.Mul(expandedGamma)
 	}
 	if beta != nil {
-		normalized = normalized.Add(beta)
+		expandedBeta := beta
+		for i := 0; i < normalized.Ndim()-beta.Ndim(); i++ {
+			expandedBeta = expandedBeta.ExpandDims(0)
+		}
+		normalized = normalized.Add(expandedBeta)
 	}
 
 	return normalized
 }
-
 
 // =================================================================================================
 // == 辅助函数与工具 (Helpers & Utilities) ==
@@ -820,10 +860,10 @@ func (t *Tensor) String() string {
 
 // stringRecursive 是 String() 的递归辅助函数，用于格式化多维数组的输出。
 func (t *Tensor) stringRecursive(sb *strings.Builder, indices []int, depth int) {
-    if depth == t.Ndim() {
+	if depth == t.Ndim() {
 		sb.WriteString(fmt.Sprintf("%.4f", t.Get(indices...)))
-        return
-    }
+		return
+	}
 
 	sb.WriteString(strings.Repeat(" ", depth))
 	sb.WriteString("[")
@@ -840,7 +880,6 @@ func (t *Tensor) stringRecursive(sb *strings.Builder, indices []int, depth int) 
 	sb.WriteString("]")
 }
 
-
 // Clone 创建一个张量的深拷贝。
 func (t *Tensor) Clone() *Tensor {
 	result := NewTensor(t.shape...)
@@ -852,32 +891,40 @@ func (t *Tensor) Clone() *Tensor {
 	return result
 }
 
-// _elementWiseOp 是执行元素级二元操作的通用私有函数。
-// 它处理了形状检查和广播逻辑。
-func (t *Tensor) _elementWiseOp(other *Tensor, op func(a, b float64) float64) *Tensor {
-	// 如果形状完全相同，直接计算
-	if t.sameShape(other) {
-		result := NewTensor(t.shape...)
-		for i := 0; i < t.size; i++ {
-			result.data[i] = op(t.data[i], other.data[i])
+func (t *Tensor) sameShape(other *Tensor) bool {
+	if len(t.shape) != len(other.shape) {
+		return false
+	}
+	for i := range t.shape {
+		if t.shape[i] != other.shape[i] {
+			return false
 		}
-		return result
 	}
+	return true
+}
 
-	// 否则，尝试广播
-	resultShape, broadcastA, broadcastB := broadcastShapes(t.shape, other.shape)
-	result := NewTensor(resultShape...)
-
-	// TODO: 这是一个简化的广播实现，更复杂的广播需要迭代器模式
-	// 这里只处理一个操作数是标量或需要扩展维度的情况
-	aIter := newBroadcastIterator(t, broadcastA)
-	bIter := newBroadcastIterator(other, broadcastB)
-
-	for i := 0; i < result.size; i++ {
-		result.data[i] = op(aIter.Next(), bIter.Next())
+// Placeholder for broadcastShapes
+func broadcastShapes(a, b []int) ([]int, []int, []int) {
+	// This is a simplified placeholder. A real implementation would be more complex.
+	if len(a) != len(b) {
+		panic("Broadcasting between different numbers of dimensions is not supported in this placeholder.")
 	}
+	return a, a, b
+}
 
-	return result
+// Placeholder for broadcastIterator
+type broadcastIterator struct {
+	tensor *Tensor
+	pos    int
+}
+
+func newBroadcastIterator(t *Tensor, broadcastInfo []int) *broadcastIterator {
+	return &broadcastIterator{tensor: t, pos: -1}
+}
+
+func (it *broadcastIterator) Next() float64 {
+	it.pos = (it.pos + 1) % it.tensor.size
+	return it.tensor.data[it.pos]
 }
 
 // reduceAxes 是一个沿指定轴进行归约操作的辅助函数。

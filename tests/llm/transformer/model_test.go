@@ -46,23 +46,19 @@ func TestTransformerModel_Forward(t *testing.T) {
 			tgtInput[i][j] = (i*seqLen + j) % cfg.VocabSize
 		}
 	}
-	srcMask := make(core.Matrix, batchSize*seqLen)
-	for i := range srcMask {
-		srcMask[i] = make([]float64, batchSize*seqLen)
-	}
-	tgtMask := make(core.Matrix, batchSize*seqLen)
-	for i := range tgtMask {
-		tgtMask[i] = make([]float64, batchSize*seqLen)
-	}
+	srcMaskData := make([]float64, batchSize*cfg.NumHeads*seqLen*seqLen)
+	srcMask := core.NewTensorFromData(srcMaskData, batchSize, cfg.NumHeads, seqLen, seqLen)
+	tgtMaskData := make([]float64, batchSize*cfg.NumHeads*seqLen*seqLen)
+	tgtMask := core.NewTensorFromData(tgtMaskData, batchSize, cfg.NumHeads, seqLen, seqLen)
 
 	logits, encAttnWeights, selfAttnWeights, encDecAttnWeights := model.Forward(input, tgtInput, srcMask, tgtMask)
 
 	// 5. 验证输出维度
-	if len(logits) != batchSize*seqLen {
-		t.Errorf("Logits output rows = %d, want %d", len(logits), batchSize*seqLen)
+	if logits.Shape()[0] != batchSize*seqLen {
+		t.Errorf("Logits output rows = %d, want %d", logits.Shape()[0], batchSize*seqLen)
 	}
-	if len(logits[0]) != cfg.VocabSize {
-		t.Errorf("Logits output columns = %d, want %d", len(logits[0]), cfg.VocabSize)
+	if logits.Shape()[1] != cfg.VocabSize {
+		t.Errorf("Logits output columns = %d, want %d", logits.Shape()[1], cfg.VocabSize)
 	}
 
 	// 6. 验证编码器注意力权重维度

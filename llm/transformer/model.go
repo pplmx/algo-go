@@ -12,27 +12,23 @@ import (
 
 // 完整的 Transformer 模型
 type TransformerModel struct {
-	Config       config.TransformerConfig
-	SrcEmbedding *layer.Embedding
-	TgtEmbedding *layer.Embedding
-	Encoder      *layer.TransformerEncoder
-	Decoder      *layer.TransformerDecoder
-	Generator    *layer.LinearLayer
+	Config    config.TransformerConfig
+	Encoder   *layer.TransformerEncoder
+	Decoder   *layer.TransformerDecoder
+	Generator *layer.LinearLayer
 
-	lastSrcEmb    core.Matrix
-	lastEncOutput core.Matrix
-	lastDecOutput core.Matrix
+	lastSrcEmb    *core.Tensor
+	lastEncOutput *core.Tensor
+	lastDecOutput *core.Tensor
 }
 
 // NewTransformerModel creates a new TransformerModel.
 func NewTransformerModel(cfg config.TransformerConfig) *TransformerModel {
 	return &TransformerModel{
-		Config:       cfg,
-		SrcEmbedding: layer.NewEmbedding(cfg.VocabSize, cfg.DModel),
-		TgtEmbedding: layer.NewEmbedding(cfg.VocabSize, cfg.DModel),
-		Encoder:      layer.NewTransformerEncoder(cfg, 6),
-		Decoder:      layer.NewTransformerDecoder(cfg, 6),
-		Generator:    layer.NewLinearLayer(cfg.DModel, cfg.VocabSize, true),
+		Config:    cfg,
+		Encoder:   layer.NewTransformerEncoder(cfg, 6),
+		Decoder:   layer.NewTransformerDecoder(cfg, 6),
+		Generator: layer.NewLinearLayer(cfg.DModel, cfg.VocabSize, true),
 	}
 }
 
@@ -43,13 +39,9 @@ func (t *TransformerModel) SetTraining(training bool) {
 }
 
 // Forward performs the forward pass for the TransformerModel.
-func (t *TransformerModel) Forward(srcInput, tgtInput [][]int, srcMask, tgtMask core.Matrix) (core.Matrix, [][]core.Matrix, [][]core.Matrix, [][]core.Matrix) {
-	// 源语言嵌入
-	srcEmb := t.SrcEmbedding.Forward(srcInput)
-	t.lastSrcEmb = srcEmb
-
+func (t *TransformerModel) Forward(srcInput, tgtInput [][]int, srcMask, tgtMask *core.Tensor) (*core.Tensor, [][]*core.Tensor, [][]*core.Tensor, [][]*core.Tensor) {
 	// 编码器前向传播
-	encOutput, encAttnWeights := t.Encoder.Forward(srcEmb, srcMask)
+	encOutput, encAttnWeights := t.Encoder.Forward(srcInput, srcMask)
 	t.lastEncOutput = encOutput
 
 	// 解码器前向传播
@@ -57,36 +49,37 @@ func (t *TransformerModel) Forward(srcInput, tgtInput [][]int, srcMask, tgtMask 
 	t.lastDecOutput = decOutput
 
 	// 生成器输出
-	logits := t.Generator.Forward(decOutput)
+	batchSize := decOutput.Shape()[0]
+	seqLen := decOutput.Shape()[1]
+	reshapedDecOutput := decOutput.Reshape(batchSize*seqLen, t.Config.DModel)
+	logits := t.Generator.Forward(reshapedDecOutput)
 
 	return logits, encAttnWeights, selfAttnWeights, encDecAttnWeights
 }
 
 // Backward performs the backward pass for the TransformerModel.
-func (t *TransformerModel) Backward(gradOutput core.Matrix) (gradSrcInput, gradTgtInput core.Matrix) {
+func (t *TransformerModel) Backward(gradOutput *core.Tensor) (*core.Tensor, *core.Tensor) {
 	// 1. Backward through Generator
 	gradDecOutput := t.Generator.Backward(gradOutput)
 
 	// 2. Backward through Decoder
-	gradTgtEmb, gradEncOutput_from_Decoder := t.Decoder.Backward(gradDecOutput)
+	gradTgtEmb, gradEncOutputFromDecoder := t.Decoder.Backward(gradDecOutput)
 
 	// 3. Backward through Encoder
-	gradSrcEmb := t.Encoder.Backward(core.AddMatrices(gradEncOutput_from_Decoder, core.Zeros(len(t.lastEncOutput), len(t.lastEncOutput[0])))) // Add zero matrix to match dimensions
+	gradSrcEmb := t.Encoder.Backward(gradEncOutputFromDecoder) // Add zero matrix to match dimensions
 
 	// 4. Backward through SrcEmbedding
-	gradSrcInput = t.SrcEmbedding.Backward(gradSrcEmb)
+	gradSrcInput := t.Encoder.SrcEmbedding.Backward(gradSrcEmb)
 
 	// 5. Backward through TgtEmbedding
-	gradTgtInput = t.TgtEmbedding.Backward(gradTgtEmb)
+	gradTgtInput := t.Decoder.TgtEmbedding.Backward(gradTgtEmb)
 
 	return gradSrcInput, gradTgtInput
 }
 
 // GetParameters returns all trainable parameters of the TransformerModel.
-func (t *TransformerModel) GetParameters() []core.Matrix {
-	params := []core.Matrix{}
-	params = append(params, t.SrcEmbedding.GetParameters()...)
-	params = append(params, t.TgtEmbedding.GetParameters()...)
+func (t *TransformerModel) GetParameters() []*core.Tensor {
+	var params []*core.Tensor
 	params = append(params, t.Encoder.GetParameters()...)
 	params = append(params, t.Decoder.GetParameters()...)
 	params = append(params, t.Generator.GetParameters()...)
@@ -94,10 +87,8 @@ func (t *TransformerModel) GetParameters() []core.Matrix {
 }
 
 // GetGradients returns the gradients of all trainable parameters of the TransformerModel.
-func (t *TransformerModel) GetGradients() []core.Matrix {
-	grads := []core.Matrix{}
-	grads = append(grads, t.SrcEmbedding.GetGradients()...)
-	grads = append(grads, t.TgtEmbedding.GetGradients()...)
+func (t *TransformerModel) GetGradients() []*core.Tensor {
+	var grads []*core.Tensor
 	grads = append(grads, t.Encoder.GetGradients()...)
 	grads = append(grads, t.Decoder.GetGradients()...)
 	grads = append(grads, t.Generator.GetGradients()...)
@@ -106,8 +97,6 @@ func (t *TransformerModel) GetGradients() []core.Matrix {
 
 // ZeroGradients sets the gradients of all trainable parameters to zero for the TransformerModel.
 func (t *TransformerModel) ZeroGradients() {
-	t.SrcEmbedding.ZeroGradients()
-	t.TgtEmbedding.ZeroGradients()
 	t.Encoder.ZeroGradients()
 	t.Decoder.ZeroGradients()
 	t.Generator.ZeroGradients()
@@ -156,30 +145,24 @@ func (t *TransformerModel) Generate(srcInput [][]int, maxLen int) [][]int {
 	}
 
 	// Create dummy masks for generation (no actual masking needed for greedy decoding here)
-	// In a real scenario, srcMask would be based on srcInput padding
-	// and tgtMask would be a look-ahead mask for the current tgtInput length.
-	srcMask := core.Zeros(len(srcInput)*t.Config.MaxSeqLen, len(srcInput)*t.Config.MaxSeqLen)
-	tgtMask := core.Zeros(len(srcInput)*t.Config.MaxSeqLen, len(srcInput)*t.Config.MaxSeqLen)
+	srcMask := core.Zeros(len(srcInput), 1, t.Config.MaxSeqLen)
+	tgtMask := core.Zeros(len(srcInput), t.Config.MaxSeqLen, t.Config.MaxSeqLen)
 
 	// Iteratively generate tokens
 	for l := 0; l < maxLen; l++ {
 		// Forward pass to get logits for the next token
 		logits, _, _, _ := t.Forward(srcInput, tgtInput, srcMask, tgtMask)
 
-		// Get the last token's logits (corresponding to the last position in the current tgtInput)
-		lastLogits := make(core.Matrix, len(srcInput))
-		for i := range srcInput {
-			// The logits are flattened (batch_size * seq_len, vocab_size)
-			// We need the logits for the last token of each sequence in the batch
-			lastLogits[i] = logits[i*len(tgtInput[0])+len(tgtInput[0])-1]
-		}
+		// Get the last token's logits
+		lastLogits := logits.Slice(0, logits.Shape()[0]).Reshape(len(srcInput), -1, t.Config.VocabSize)
 
 		// Select the token with the highest probability (greedy)
 		nextTokens := make([]int, len(srcInput))
-		for i, row := range lastLogits {
+		for i := 0; i < len(srcInput); i++ {
+			row := lastLogits.Slice(i, i+1).Reshape(t.Config.VocabSize)
 			maxProb := -1.0
 			maxIdx := -1
-			for j, prob := range row {
+			for j, prob := range row.Data() {
 				if prob > maxProb {
 					maxProb = prob
 					maxIdx = j

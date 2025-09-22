@@ -4,14 +4,14 @@ import "github.com/pplmx/algo-go/llm/transformer/core"
 
 // 线性变换层
 type LinearLayer struct {
-	Weight  core.Matrix
-	Bias    core.Matrix
+	Weight  *core.Tensor
+	Bias    *core.Tensor
 	UseBias bool
 
-	lastInput core.Matrix // Store input for backward pass
+	lastInput *core.Tensor // Store input for backward pass
 
-	gradWeight core.Matrix
-	gradBias   core.Matrix
+	gradWeight *core.Tensor
+	gradBias   *core.Tensor
 }
 
 func NewLinearLayer(inFeatures, outFeatures int, useBias bool) *LinearLayer {
@@ -26,55 +26,55 @@ func NewLinearLayer(inFeatures, outFeatures int, useBias bool) *LinearLayer {
 	return layer
 }
 
-func (l *LinearLayer) Forward(x core.Matrix) core.Matrix {
+func (l *LinearLayer) Forward(x *core.Tensor, args ...interface{}) *core.Tensor {
 	l.lastInput = x // Store input
-	result := core.MatMul(x, l.Weight)
+	result := x.Dot(l.Weight)
 
 	if l.UseBias {
-		for i := range result {
-			for j := range result[i] {
-				result[i][j] += l.Bias[0][j]
-			}
-		}
+		result = result.Add(l.Bias) // Broadcasting will handle the addition
 	}
 
 	return result
 }
 
-func (l *LinearLayer) Backward(gradOutput core.Matrix) core.Matrix {
+func (l *LinearLayer) Backward(gradOutput *core.Tensor) *core.Tensor {
 	// Calculate gradient with respect to weights
-	l.gradWeight = core.MatMul(core.Transpose(l.lastInput), gradOutput)
+	l.gradWeight = l.lastInput.Transpose().Dot(gradOutput)
 
 	// Calculate gradient with respect to bias
 	if l.UseBias {
-		l.gradBias = core.SumRows(gradOutput)
+		l.gradBias = gradOutput.Sum(0) // Sum along the batch dimension
 	}
 
 	// Calculate gradient with respect to input
-	gradInput := core.MatMul(gradOutput, core.Transpose(l.Weight))
+	gradInput := gradOutput.Dot(l.Weight.Transpose())
 
 	return gradInput
 }
 
-func (l *LinearLayer) GetParameters() []core.Matrix {
+func (l *LinearLayer) GetParameters() []*core.Tensor {
 	if l.UseBias {
-		return []core.Matrix{l.Weight, l.Bias}
+		return []*core.Tensor{l.Weight, l.Bias}
 	}
-	return []core.Matrix{l.Weight}
+	return []*core.Tensor{l.Weight}
 }
 
-func (l *LinearLayer) GetGradients() []core.Matrix {
+func (l *LinearLayer) GetGradients() []*core.Tensor {
 	if l.UseBias {
-		return []core.Matrix{l.gradWeight, l.gradBias}
+		return []*core.Tensor{l.gradWeight, l.gradBias}
 	}
-	return []core.Matrix{l.gradWeight}
+	return []*core.Tensor{l.gradWeight}
 }
 
 func (l *LinearLayer) ZeroGradients() {
 	if l.gradWeight != nil {
-		l.gradWeight = core.Zeros(len(l.gradWeight), len(l.gradWeight[0]))
+		l.gradWeight = core.Zeros(l.gradWeight.Shape()...)
 	}
 	if l.UseBias && l.gradBias != nil {
-		l.gradBias = core.Zeros(len(l.gradBias), len(l.gradBias[0]))
+		l.gradBias = core.Zeros(l.gradBias.Shape()...)
 	}
+}
+
+func (l *LinearLayer) SetTraining(training bool) {
+	// No-op for linear layer
 }

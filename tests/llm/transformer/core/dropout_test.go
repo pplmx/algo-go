@@ -12,13 +12,13 @@ func TestDropout_EvalMode(t *testing.T) {
 	dropout := core.NewDropout(0.5, false)
 
 	// 2. 准备输入数据
-	input := core.Matrix{{1, 2, 3}, {4, 5, 6}}
+	input := core.NewTensorFromData([]float64{1, 2, 3, 4, 5, 6}, 2, 3)
 
 	// 3. 执行前向传播
 	output := dropout.Forward(input)
 
 	// 4. 验证输出是否与输入完全相同
-	if !helpers.MatricesAlmostEqual(input, output, 1e-9) {
+	if !helpers.TensorsAlmostEqual(input, output, 1e-9) {
 		t.Errorf("In eval mode, dropout output should be identical to input. Got %v, want %v", output, input)
 	}
 }
@@ -29,10 +29,10 @@ func TestDropout_TrainMode(t *testing.T) {
 	dropout := core.NewDropout(rate, true)
 
 	// 2. 准备输入数据
-	input := core.Matrix{
-		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-		{1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-	}
+	input := core.NewTensorFromData([]float64{
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+		1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+	}, 2, 10)
 
 	// 3. 执行前向传播
 	output := dropout.Forward(input)
@@ -42,15 +42,13 @@ func TestDropout_TrainMode(t *testing.T) {
 	nonZeroCount := 0
 	expectedScaledValue := 1.0 / (1.0 - rate)
 
-	for _, row := range output {
-		for _, val := range row {
-			if val == 0 {
-				zeroCount++
-			} else {
-				nonZeroCount++
-				if !almostEqual(val, expectedScaledValue, 1e-9) {
-					t.Errorf("Non-zero value should be scaled by 1/(1-rate). Got %f, want %f", val, expectedScaledValue)
-				}
+	for _, val := range output.Data() {
+		if val == 0 {
+			zeroCount++
+		} else {
+			nonZeroCount++
+			if !almostEqual(val, expectedScaledValue, 1e-9) {
+				t.Errorf("Non-zero value should be scaled by 1/(1-rate). Got %f, want %f", val, expectedScaledValue)
 			}
 		}
 	}

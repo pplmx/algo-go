@@ -6,19 +6,14 @@ import (
 	"github.com/pplmx/algo-go/llm/transformer/core"
 )
 
-// MatricesAlmostEqual 比较两个矩阵在给定的误差范围内是否相等
-func MatricesAlmostEqual(a, b core.Matrix, tolerance float64) bool {
-	if len(a) != len(b) {
+// TensorsAlmostEqual 比较两个张量在给定的误差范围内是否相等
+func TensorsAlmostEqual(a, b *core.Tensor, tolerance float64) bool {
+	if !core.Shape(a.Shape()).Equal(core.Shape(b.Shape())) {
 		return false
 	}
-	for i := range a {
-		if len(a[i]) != len(b[i]) {
+	for i := 0; i < a.Size(); i++ {
+		if math.Abs(a.Data()[i]-b.Data()[i]) > tolerance {
 			return false
-		}
-		for j := range a[i] {
-			if math.Abs(a[i][j]-b[i][j]) > tolerance {
-				return false
-			}
 		}
 	}
 	return true

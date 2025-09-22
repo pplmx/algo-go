@@ -43,9 +43,8 @@ func TestDataLoader_NextBatch(t *testing.T) {
 	}
 
 	// Check mask dimensions (batchSize * MaxSeqLen, batchSize * MaxSeqLen)
-	expectedMaskDim := 2 * 5 // batchSize * MaxSeqLen
-	if len(srcMask) != expectedMaskDim || len(srcMask[0]) != expectedMaskDim {
-		t.Errorf("SrcMask dimensions incorrect. Got %dx%d, want %dx%d", len(srcMask), len(srcMask[0]), expectedMaskDim, expectedMaskDim)
+	if srcMask.Shape()[0] != 2 || srcMask.Shape()[1] != 1 || srcMask.Shape()[2] != 5 {
+		t.Errorf("SrcMask dimensions incorrect. Got %dx%dx%d, want %dx%dx%d", srcMask.Shape()[0], srcMask.Shape()[1], srcMask.Shape()[2], 2, 1, 5)
 	}
 
 	// Check some mask values (e.g., padding positions should be -inf)
@@ -60,13 +59,13 @@ func TestDataLoader_NextBatch(t *testing.T) {
 	// Row for token 5 (index 4) in batch 1 is 1*5+4 = 9
 
 	// Check a padding position (e.g., the first padded token in the first sequence)
-	if srcMask[3][0] != -math.MaxFloat64 {
-		t.Errorf("Padding mask value incorrect for padded token. Got %f, want -MaxFloat64", srcMask[3][0])
+	if srcMask.Get(0, 0, 3) != -math.MaxFloat64 {
+		t.Errorf("Padding mask value incorrect for padded token. Got %f, want -MaxFloat64", srcMask.Get(0, 0, 3))
 	}
 
 	// Check a non-padding position
-	if srcMask[0][0] != 0.0 {
-		t.Errorf("Padding mask value incorrect for non-padded token. Got %f, want 0.0", srcMask[0][0])
+	if srcMask.Get(0, 0, 0) != 0.0 {
+		t.Errorf("Padding mask value incorrect for non-padded token. Got %f, want 0.0", srcMask.Get(0, 0, 0))
 	}
 
 	// Second batch

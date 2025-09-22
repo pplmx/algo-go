@@ -16,12 +16,13 @@ func TestPerplexity(t *testing.T) {
 
 	// 2. Prepare input data
 	// batchSize=1, seqLen=1, vocabSize=4
-	logits := core.Matrix{{
+	logitsData := []float64{
 		math.Log(0.1), // log(prob for token 0)
 		math.Log(0.2), // log(prob for token 1)
 		math.Log(0.3), // log(prob for token 2)
 		math.Log(0.4), // log(prob for token 3)
-	}}
+	}
+	logits := core.NewTensorFromData(logitsData, 1, 4)
 	targets := [][]int{{3}} // Target is token 3
 
 	// 3. Calculate expected perplexity manually

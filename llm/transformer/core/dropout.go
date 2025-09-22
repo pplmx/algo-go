@@ -10,7 +10,7 @@ type Dropout struct {
 	Rate     float64
 	Training bool
 	rng      *rand.Rand
-	lastMask Matrix // Stores the mask applied during the forward pass
+	lastMask *Tensor // Stores the mask applied during the forward pass
 }
 
 // NewDropout creates a new Dropout layer.
@@ -33,42 +33,31 @@ func (d *Dropout) SetTraining(training bool) {
 // Forward performs the forward pass for the Dropout layer.
 // During training, it randomly sets elements to zero and scales the remaining ones.
 // During evaluation, it simply passes the input through.
-func (d *Dropout) Forward(x Matrix) Matrix {
+func (d *Dropout) Forward(x *Tensor) *Tensor {
 	if !d.Training || d.Rate == 0.0 {
 		return x
 	}
 
-	result := make(Matrix, len(x))
-	d.lastMask = make(Matrix, len(x)) // Initialize lastMask
-	for i := range x {
-		result[i] = make([]float64, len(x[i]))
-		d.lastMask[i] = make([]float64, len(x[i])) // Initialize inner slice of lastMask
-		for j := range x[i] {
-			if d.rng.Float64() > d.Rate {
-				result[i][j] = x[i][j] / (1.0 - d.Rate)
-				d.lastMask[i][j] = 1.0 / (1.0 - d.Rate) // Store scaling factor
-			} else {
-				result[i][j] = 0.0
-				d.lastMask[i][j] = 0.0 // Store zero
-			}
+	maskData := make([]float64, x.Size())
+	scale := 1.0 / (1.0 - d.Rate)
+	for i := 0; i < x.Size(); i++ {
+		if d.rng.Float64() > d.Rate {
+			maskData[i] = scale
+		} else {
+			maskData[i] = 0.0
 		}
 	}
-	return result
+	d.lastMask = NewTensorFromData(maskData, x.Shape()...)
+
+	return x.Mul(d.lastMask)
 }
 
 // Backward performs the backward pass for the Dropout layer.
 // It applies the same mask used in the forward pass to the gradients.
-func (d *Dropout) Backward(gradOutput Matrix) Matrix {
+func (d *Dropout) Backward(gradOutput *Tensor) *Tensor {
 	if !d.Training || d.Rate == 0.0 {
 		return gradOutput
 	}
 
-	gradInput := make(Matrix, len(gradOutput))
-	for i := range gradOutput {
-		gradInput[i] = make([]float64, len(gradOutput[i]))
-		for j := range gradOutput[i] {
-			gradInput[i][j] = gradOutput[i][j] * d.lastMask[i][j]
-		}
-	}
-	return gradInput
+	return gradOutput.Mul(d.lastMask)
 }

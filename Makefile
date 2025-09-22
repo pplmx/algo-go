@@ -1,5 +1,5 @@
 test:
-	@go test -v ./...
+	@go test -v ./... ./tests/...
 
 fmt:
 	@gofmt -l -s -w .

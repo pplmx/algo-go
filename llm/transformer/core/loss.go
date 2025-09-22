@@ -17,18 +17,18 @@ func NewCrossEntropyLoss(cfg config.TransformerConfig) *CrossEntropyLoss {
 }
 
 // Forward calculates the cross-entropy loss.
-func (c *CrossEntropyLoss) Forward(logits Matrix, targets [][]int) float64 {
+func (c *CrossEntropyLoss) Forward(logits *Tensor, targets [][]int) float64 {
 	batchSize := len(targets)
 	seqLen := len(targets[0])
 
-	probs := c.softmax(logits)
+	probs := logits.Softmax(len(logits.Shape()) - 1)
 
 	loss := 0.0
 	for i := 0; i < batchSize; i++ {
 		for j := 0; j < seqLen; j++ {
 			rowIndex := i*seqLen + j
 			targetIdx := targets[i][j]
-			prob := probs[rowIndex][targetIdx]
+			prob := probs.Data()[rowIndex*probs.Shape()[len(probs.Shape())-1]+targetIdx]
 			loss += -math.Log(prob + 1e-10)
 		}
 	}
@@ -37,49 +37,20 @@ func (c *CrossEntropyLoss) Forward(logits Matrix, targets [][]int) float64 {
 }
 
 // Backward calculates the gradients for the cross-entropy loss.
-func (c *CrossEntropyLoss) Backward(logits Matrix, targets [][]int) Matrix {
-	probs := c.softmax(logits)
+func (c *CrossEntropyLoss) Backward(logits *Tensor, targets [][]int) *Tensor {
+	probs := logits.Softmax(len(logits.Shape()) - 1)
 	batchSize := len(targets)
 	seqLen := len(targets[0])
 
-	grad := probs // softmax returns a new matrix, so we can modify it in place
+	grad := probs.Clone() // Clone to avoid modifying the original tensor
 
 	for i := 0; i < batchSize; i++ {
 		for j := 0; j < seqLen; j++ {
 			rowIndex := i*seqLen + j
 			targetIdx := targets[i][j]
-			grad[rowIndex][targetIdx] -= 1.0
+			grad.Data()[rowIndex*grad.Shape()[len(grad.Shape())-1]+targetIdx] -= 1.0
 		}
 	}
 
-	return ScaleMatrix(grad, 1.0/float64(batchSize*seqLen))
-}
-
-// softmax applies the softmax function row-wise to a matrix.
-func (c *CrossEntropyLoss) softmax(x Matrix) Matrix {
-	result := make(Matrix, len(x))
-	for i := range x {
-		result[i] = make([]float64, len(x[i]))
-
-		// 减去最大值以提高数值稳定性
-		maxVal := x[i][0]
-		for j := 1; j < len(x[i]); j++ {
-			if x[i][j] > maxVal {
-				maxVal = x[i][j]
-			}
-		}
-
-		// 计算指数和
-		sum := 0.0
-		for j := range x[i] {
-			result[i][j] = math.Exp(x[i][j] - maxVal)
-			sum += result[i][j]
-		}
-
-		// 应用 softmax
-		for j := range result[i] {
-			result[i][j] /= sum
-		}
-	}
-	return result
+	return grad.MulScalar(1.0 / float64(batchSize*seqLen))
 }

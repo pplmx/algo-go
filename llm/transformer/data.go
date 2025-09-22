@@ -51,7 +51,7 @@ func (dl *DataLoader) HasNextBatch() bool {
 }
 
 // NextBatch 获取下一个批次的数据
-func (dl *DataLoader) NextBatch() ([][]int, [][]int, core.Matrix, core.Matrix) {
+func (dl *DataLoader) NextBatch() ([][]int, [][]int, *core.Tensor, *core.Tensor) {
 	start := dl.CurrentIdx
 	end := dl.CurrentIdx + dl.BatchSize
 	if end > len(dl.Dataset.SourceSentences) {
@@ -96,42 +96,15 @@ func (dl *DataLoader) padBatch(batch [][]int, maxLen int) [][]int {
 }
 
 // generatePaddingMask 生成填充掩码
-// 掩码的形状为 (batchSize * seqLen, batchSize * seqLen)
-// 对于填充位置，掩码值为 -inf，否则为 0
-func (dl *DataLoader) generatePaddingMask(batch [][]int) core.Matrix {
+func (dl *DataLoader) generatePaddingMask(batch [][]int) *core.Tensor {
 	batchSize := len(batch)
 	seqLen := len(batch[0])
-	maskDim := batchSize * seqLen
-	mask := make(core.Matrix, maskDim)
-	for i := range mask {
-		mask[i] = make([]float64, maskDim)
-	}
+	mask := core.Zeros(batchSize, 1, seqLen)
 
-	// Initialize mask with zeros
-	// (already done by make, but explicit for clarity)
-
-	// Apply masking for padded query tokens (rows)
-	for b := 0; b < batchSize; b++ {
-		for r := 0; r < seqLen; r++ {
-			// If the query token is a padding token, mask its attention to all keys
-			if batch[b][r] == dl.Dataset.Config.PadToken {
-				queryIdx := b*seqLen + r
-				for c := 0; c < maskDim; c++ {
-					mask[queryIdx][c] = -math.MaxFloat64 // -inf
-				}
-			}
-		}
-	}
-
-	// Apply masking for padded key tokens (columns)
-	for b := 0; b < batchSize; b++ {
-		for c := 0; c < seqLen; c++ {
-			// If the key token is a padding token, mask all queries' attention to it
-			if batch[b][c] == dl.Dataset.Config.PadToken {
-				keyIdx := b*seqLen + c
-				for r := 0; r < maskDim; r++ {
-					mask[r][keyIdx] = -math.MaxFloat64 // -inf
-				}
+	for i := 0; i < batchSize; i++ {
+		for j := 0; j < seqLen; j++ {
+			if batch[i][j] == dl.Dataset.Config.PadToken {
+				mask.Set(-math.MaxFloat64, i, 0, j)
 			}
 		}
 	}

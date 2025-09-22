@@ -19,6 +19,7 @@ func TestTransformerDecoderLayer_Forward(t *testing.T) {
 		DropoutRate:   0.0,
 		UseBias:       false,
 	}
+	batchSize := 1
 	seqLen := 3
 
 	// 2. 初始化 DecoderLayer
@@ -26,34 +27,32 @@ func TestTransformerDecoderLayer_Forward(t *testing.T) {
 	decoderLayer.SetTraining(false)
 
 	// 3. 准备输入数据
-	x := core.Matrix{
-		{1, 2, 3, 4, 5, 6, 7, 8},
-		{8, 7, 6, 5, 4, 3, 2, 1},
-		{1, 3, 5, 7, 9, 2, 4, 6},
+	xData := []float64{
+		1, 2, 3, 4, 5, 6, 7, 8,
+		8, 7, 6, 5, 4, 3, 2, 1,
+		1, 3, 5, 7, 9, 2, 4, 6,
 	}
-	encoderOutput := core.Matrix{
-		{10, 11, 12, 13, 14, 15, 16, 17},
-		{17, 16, 15, 14, 13, 12, 11, 10},
-		{10, 12, 14, 16, 18, 11, 13, 15},
+	x := core.NewTensorFromData(xData, batchSize, seqLen, cfg.DModel)
+	encoderOutputData := []float64{
+		10, 11, 12, 13, 14, 15, 16, 17,
+		17, 16, 15, 14, 13, 12, 11, 10,
+		10, 12, 14, 16, 18, 11, 13, 15,
 	}
-	srcMask := make(core.Matrix, seqLen)
-	for i := range srcMask {
-		srcMask[i] = make([]float64, seqLen)
-	}
-	tgtMask := make(core.Matrix, seqLen)
-	for i := range tgtMask {
-		tgtMask[i] = make([]float64, seqLen)
-	}
+	encoderOutput := core.NewTensorFromData(encoderOutputData, batchSize, seqLen, cfg.DModel)
+	srcMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
+	srcMask := core.NewTensorFromData(srcMaskData, batchSize, 1, seqLen, seqLen)
+	tgtMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
+	tgtMask := core.NewTensorFromData(tgtMaskData, batchSize, 1, seqLen, seqLen)
 
 	// 4. 执行前向传播
 	output, selfAttnWeights, encDecAttnWeights := decoderLayer.Forward(x, encoderOutput, srcMask, tgtMask)
 
 	// 5. 验证输出维度
-	if len(output) != seqLen {
-		t.Errorf("Output sequence length = %d, want %d", len(output), seqLen)
+	if output.Shape()[0] != seqLen {
+		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], seqLen)
 	}
-	if len(output[0]) != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", len(output[0]), cfg.DModel)
+	if output.Shape()[1] != cfg.DModel {
+		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
 	}
 
 	// 6. 验证注意力权重维度
@@ -94,32 +93,28 @@ func TestTransformerDecoder_Forward(t *testing.T) {
 			tgtInput[i][j] = (i*seqLen + j) % cfg.VocabSize
 		}
 	}
-	encoderOutput := make(core.Matrix, batchSize*seqLen)
-	for i := range encoderOutput {
-		encoderOutput[i] = make([]float64, cfg.DModel)
-		for j := range encoderOutput[i] {
-			encoderOutput[i][j] = float64(i*cfg.DModel + j)
+	encoderOutputData := make([]float64, batchSize*seqLen*cfg.DModel)
+	for i := 0; i < batchSize*seqLen; i++ {
+		for j := 0; j < cfg.DModel; j++ {
+			encoderOutputData[i*cfg.DModel+j] = float64(i*cfg.DModel + j)
 		}
 	}
+	encoderOutput := core.NewTensorFromData(encoderOutputData, batchSize*seqLen, cfg.DModel)
 
-	srcMask := make(core.Matrix, batchSize*seqLen)
-	for i := range srcMask {
-		srcMask[i] = make([]float64, batchSize*seqLen)
-	}
-	tgtMask := make(core.Matrix, batchSize*seqLen)
-	for i := range tgtMask {
-		tgtMask[i] = make([]float64, batchSize*seqLen)
-	}
+	srcMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
+	srcMask := core.NewTensorFromData(srcMaskData, batchSize*seqLen, batchSize*seqLen)
+	tgtMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
+	tgtMask := core.NewTensorFromData(tgtMaskData, batchSize*seqLen, batchSize*seqLen)
 
 	// 4. 执行前向传播
 	output, allSelfAttnWeights, allEncDecAttnWeights := decoder.Forward(tgtInput, encoderOutput, srcMask, tgtMask)
 
 	// 5. 验证输出维度
-	if len(output) != batchSize*seqLen {
-		t.Errorf("Output sequence length = %d, want %d", len(output), batchSize*seqLen)
+	if output.Shape()[0] != batchSize*seqLen {
+		t.Errorf("Output sequence length = %d, want %d", output.Shape()[0], batchSize*seqLen)
 	}
-	if len(output[0]) != cfg.DModel {
-		t.Errorf("Output dimension = %d, want %d", len(output[0]), cfg.DModel)
+	if output.Shape()[1] != cfg.DModel {
+		t.Errorf("Output dimension = %d, want %d", output.Shape()[1], cfg.DModel)
 	}
 
 	// 6. 验证注意力权重维度

@@ -12,13 +12,11 @@ import (
 func TestAdamOptimizer_Update(t *testing.T) {
 	// 1. 配置和初始化
 	cfg := config.NewDefaultTrainConfig()
-	optimizer := core.NewAdamOptimizer(cfg)
+	optimizer := core.NewAdamOptimizer(cfg.LearningRate, cfg.Beta1, cfg.Beta2, cfg.Eps)
 
 	// 2. 准备输入数据
-	param := core.Matrix{{1.0, 2.0}, {3.0, 4.0}}
-	grad := core.Matrix{{0.1, 0.2}, {0.3, 0.4}}
-	// m := core.Matrix{{0.0, 0.0}, {0.0, 0.0}}
-	// v := core.Matrix{{0.0, 0.0}, {0.0, 0.0}}
+	param := core.NewTensorFromData([]float64{1.0, 2.0, 3.0, 4.0}, 2, 2)
+	grad := core.NewTensorFromData([]float64{0.1, 0.2, 0.3, 0.4}, 2, 2)
 
 	// 3. 手动计算预期结果 (after one step)
 	step := 1
@@ -27,44 +25,29 @@ func TestAdamOptimizer_Update(t *testing.T) {
 	lr := cfg.LearningRate
 	eps := cfg.Eps
 
-	expectedM := core.Matrix{{0.0, 0.0}, {0.0, 0.0}}
-	expectedV := core.Matrix{{0.0, 0.0}, {0.0, 0.0}}
-	for i := range grad {
-		for j := range grad[i] {
-			expectedM[i][j] = (1 - beta1) * grad[i][j]
-			expectedV[i][j] = (1 - beta2) * grad[i][j] * grad[i][j]
-		}
+	expectedMData := make([]float64, grad.Size())
+	expectedVData := make([]float64, grad.Size())
+	for i, g := range grad.Data() {
+		expectedMData[i] = (1 - beta1) * g
+		expectedVData[i] = (1 - beta2) * g * g
 	}
+	expectedM := core.NewTensorFromData(expectedMData, grad.Shape()...)
+	expectedV := core.NewTensorFromData(expectedVData, grad.Shape()...)
 
-	mHat := core.ScaleMatrix(expectedM, 1.0/(1-math.Pow(beta1, float64(step))))
-	vHat := core.ScaleMatrix(expectedV, 1.0/(1-math.Pow(beta2, float64(step))))
+	mHat := expectedM.DivScalar(1 - math.Pow(beta1, float64(step)))
+	vHat := expectedV.DivScalar(1 - math.Pow(beta2, float64(step)))
 
-	expectedParam := make(core.Matrix, len(param))
-	for i := range param {
-		expectedParam[i] = make([]float64, len(param[i]))
-		for j := range param[i] {
-			expectedParam[i][j] = param[i][j] - lr*mHat[i][j]/(math.Sqrt(vHat[i][j])+eps)
-		}
+	expectedParamData := make([]float64, param.Size())
+	for i, p := range param.Data() {
+		expectedParamData[i] = p - lr*mHat.Data()[i]/(math.Sqrt(vHat.Data()[i])+eps)
 	}
+	expectedParam := core.NewTensorFromData(expectedParamData, param.Shape()...)
 
 	// 4. 执行更新
 	optimizer.Update(param, grad)
 
 	// 5. 验证结果
-	// Since m and v are now internal to the optimizer, we need to access them for verification.
-	// This makes testing slightly more complex as we need to expose them or test indirectly.
-	// For now, we will assume the internal state is updated correctly if the param is updated correctly.
-	// We can also add a GetM() and GetV() to the optimizer for testing purposes if needed.
-
-	if !helpers.MatricesAlmostEqual(param, expectedParam, 1e-9) {
+	if !helpers.TensorsAlmostEqual(param, expectedParam, 1e-6) {
 		t.Errorf("Parameter update incorrect.\nGot:  %v\nWant: %v", param, expectedParam)
 	}
-
-	// Verify internal m and v states (optional, requires exposing them)
-	// if !MatricesAlmostEqual(optimizer.m, expectedM, 1e-9) {
-	// 	t.Errorf("First moment vector 'm' incorrect.\nGot:  %v\nWant: %v", optimizer.m, expectedM)
-	// }
-	// if !MatricesAlmostEqual(optimizer.v, expectedV, 1e-9) {
-	// 	t.Errorf("Second moment vector 'v' incorrect.\nGot:  %v\nWant: %v", optimizer.v, expectedV)
-	// }
 }
