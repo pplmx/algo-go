@@ -6,6 +6,7 @@ import (
 
 	"github.com/pplmx/algo-go/llm/transformer"
 	"github.com/pplmx/algo-go/llm/transformer/config"
+	"github.com/pplmx/algo-go/llm/transformer/core"
 	"github.com/pplmx/algo-go/tests/llm/helpers"
 )
 
@@ -42,30 +43,20 @@ func TestDataLoader_NextBatch(t *testing.T) {
 		t.Errorf("Padding incorrect for srcBatch. Got %v, %v", srcBatch[0], srcBatch[1])
 	}
 
-	// Check mask dimensions (batchSize * MaxSeqLen, batchSize * MaxSeqLen)
-	if srcMask.Shape()[0] != 2 || srcMask.Shape()[1] != 1 || srcMask.Shape()[2] != 5 {
-		t.Errorf("SrcMask dimensions incorrect. Got %dx%dx%d, want %dx%dx%d", srcMask.Shape()[0], srcMask.Shape()[1], srcMask.Shape()[2], 2, 1, 5)
+	// Check mask dimensions
+	expectedShape := []int{2, 1, 1, 5}
+	if !core.Shape(srcMask.Shape()).Equal(expectedShape) {
+		t.Errorf("SrcMask dimensions incorrect. Got %v, want %v", srcMask.Shape(), expectedShape)
 	}
 
-	// Check some mask values (e.g., padding positions should be -inf)
-	// For srcBatch[0] = {1,2,3,0,0}, the last two tokens are padding
-	// The corresponding rows in the mask should be -inf
-	// Row for token 3 (index 2) in batch 0 is 0*5+2 = 2
-	// Row for token 4 (index 3) in batch 0 is 0*5+3 = 3
-	// Row for token 5 (index 4) in batch 0 is 0*5+4 = 4
-	// Row for token 2 (index 1) in batch 1 is 1*5+1 = 6
-	// Row for token 3 (index 2) in batch 1 is 1*5+2 = 7
-	// Row for token 4 (index 3) in batch 1 is 1*5+3 = 8
-	// Row for token 5 (index 4) in batch 1 is 1*5+4 = 9
-
 	// Check a padding position (e.g., the first padded token in the first sequence)
-	if srcMask.Get(0, 0, 3) != -math.MaxFloat64 {
-		t.Errorf("Padding mask value incorrect for padded token. Got %f, want -MaxFloat64", srcMask.Get(0, 0, 3))
+	if srcMask.Get(0, 0, 0, 3) != -math.MaxFloat64 {
+		t.Errorf("Padding mask value incorrect for padded token. Got %f, want -MaxFloat64", srcMask.Get(0, 0, 0, 3))
 	}
 
 	// Check a non-padding position
-	if srcMask.Get(0, 0, 0) != 0.0 {
-		t.Errorf("Padding mask value incorrect for non-padded token. Got %f, want 0.0", srcMask.Get(0, 0, 0))
+	if srcMask.Get(0, 0, 0, 0) != 0.0 {
+		t.Errorf("Padding mask value incorrect for non-padded token. Got %f, want 0.0", srcMask.Get(0, 0, 0, 0))
 	}
 
 	// Second batch

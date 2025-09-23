@@ -9,11 +9,11 @@ type ScaledDotProductAttention struct {
 	DK      int
 	Dropout *Dropout
 
-	lastQuery   *Tensor
-	lastKey     *Tensor
-	lastValue   *Tensor
-	lastScores  *Tensor
-	lastWeights *Tensor
+	LastQuery   *Tensor
+	LastKey     *Tensor
+	LastValue   *Tensor
+	LastScores  *Tensor
+	LastWeights *Tensor
 }
 
 // NewScaledDotProductAttention creates a new ScaledDotProductAttention module.
@@ -31,9 +31,9 @@ func (a *ScaledDotProductAttention) SetTraining(training bool) {
 
 // Forward performs the forward pass for the ScaledDotProductAttention module.
 func (a *ScaledDotProductAttention) Forward(query, key, value *Tensor, mask *Tensor) (*Tensor, *Tensor) {
-	a.lastQuery = query
-	a.lastKey = key
-	a.lastValue = value
+	a.LastQuery = query
+	a.LastKey = key
+	a.LastValue = value
 
 	// 计算注意力分数: Q * K^T
 	var transposedKey *Tensor
@@ -51,14 +51,14 @@ func (a *ScaledDotProductAttention) Forward(query, key, value *Tensor, mask *Ten
 	if mask != nil {
 		scores = scores.Add(mask)
 	}
-	a.lastScores = scores
+	a.LastScores = scores
 
 	// 应用 softmax
 	weights := scores.Softmax(len(scores.Shape()) - 1)
 
 	// 应用 dropout
 	weights = a.Dropout.Forward(weights)
-	a.lastWeights = weights
+	a.LastWeights = weights
 
 	// 计算加权值
 	output := weights.Dot(value)
@@ -71,8 +71,8 @@ func (a *ScaledDotProductAttention) Backward(gradOutput *Tensor) (gradQuery, gra
 	// gradOutput is dL/d(output)
 
 	// 1. Gradient through MatMul(weights, value)
-	gradWeights := gradOutput.Dot(a.lastValue.Transpose(0, 2, 1))
-	gradValue = a.lastWeights.Transpose(0, 2, 1).Dot(gradOutput)
+	gradWeights := gradOutput.Dot(a.LastValue.Transpose(0, 2, 1))
+	gradValue = a.LastWeights.Transpose(0, 2, 1).Dot(gradOutput)
 
 	// 2. Gradient through Dropout
 	gradWeights = a.Dropout.Backward(gradWeights)
@@ -80,8 +80,8 @@ func (a *ScaledDotProductAttention) Backward(gradOutput *Tensor) (gradQuery, gra
 	// 3. Gradient through Softmax
 	// dL/dx_i = y_i * (dL/dy_i - sum_j(dL/dy_j * y_j))
 	// This is a simplification. A full softmax gradient is a bit more involved.
-	sumGradYTimesY := gradWeights.Mul(a.lastWeights).Sum(len(gradWeights.Shape()) - 1)
-	gradScores := a.lastWeights.Mul(gradWeights.Sub(sumGradYTimesY.ExpandDims(len(gradWeights.Shape()) - 1)))
+	sumGradYTimesY := gradWeights.Mul(a.LastWeights).Sum(len(gradWeights.Shape()) - 1)
+	gradScores := a.LastWeights.Mul(gradWeights.Sub(sumGradYTimesY.ExpandDims(len(gradWeights.Shape()) - 1)))
 
 	// 4. Gradient through AddMatrices (mask) - no change to gradScores
 
@@ -89,8 +89,8 @@ func (a *ScaledDotProductAttention) Backward(gradOutput *Tensor) (gradQuery, gra
 	gradScores = gradScores.MulScalar(1.0 / math.Sqrt(float64(a.DK)))
 
 	// 6. Gradient through MatMul(query, Transpose(key))
-	gradQuery = gradScores.Dot(a.lastKey)
-	gradKey = gradScores.Transpose(0, 2, 1).Dot(a.lastQuery)
+	gradQuery = gradScores.Dot(a.LastKey)
+	gradKey = gradScores.Transpose(0, 2, 1).Dot(a.LastQuery)
 
 	return gradQuery, gradKey, gradValue
 }

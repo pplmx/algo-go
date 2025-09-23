@@ -57,24 +57,34 @@ func (t *TransformerModel) Forward(srcInput, tgtInput [][]int, srcMask, tgtMask 
 	return logits, encAttnWeights, selfAttnWeights, encDecAttnWeights
 }
 
-// Backward performs the backward pass for the TransformerModel.
+// Backward performs the backward pass for the entire TransformerModel.
 func (t *TransformerModel) Backward(gradOutput *core.Tensor) (*core.Tensor, *core.Tensor) {
-	// 1. Backward through Generator
-	gradDecOutput := t.Generator.Backward(gradOutput)
+	// The gradient flows from the final output (logits) back through the generator, decoder, and then encoder.
 
-	// 2. Backward through Decoder
+	// 1. Backpropagate through the Generator (a linear layer).
+	// The input `gradOutput` is the gradient of the loss with respect to the logits.
+	gradReshapedDecOutput := t.Generator.Backward(gradOutput)
+
+	// 2. Reshape the gradient to match the decoder's output shape (batch, seq_len, d_model).
+	batchSize := t.lastDecOutput.Shape()[0]
+	seqLen := t.lastDecOutput.Shape()[1]
+	gradDecOutput := gradReshapedDecOutput.Reshape(batchSize, seqLen, t.Config.DModel)
+
+	// 3. Backpropagate through the Decoder.
+	// This computes gradients for all parameters within the decoder and returns the gradient
+	// with respect to the encoder's output, which is needed by the encoder's backward pass.
 	gradTgtEmb, gradEncOutputFromDecoder := t.Decoder.Backward(gradDecOutput)
 
-	// 3. Backward through Encoder
-	gradSrcEmb := t.Encoder.Backward(gradEncOutputFromDecoder) // Add zero matrix to match dimensions
+	// 4. Backpropagate through the Encoder.
+	// This computes gradients for all parameters within the encoder, using the gradient from the decoder.
+	gradSrcEmb := t.Encoder.Backward(gradEncOutputFromDecoder)
 
-	// 4. Backward through SrcEmbedding
-	gradSrcInput := t.Encoder.SrcEmbedding.Backward(gradSrcEmb)
+	// Note: The backward passes for the embedding layers are called within their respective
+	// Encoder and Decoder backward methods, so there is no need to call them again here.
 
-	// 5. Backward through TgtEmbedding
-	gradTgtInput := t.Decoder.TgtEmbedding.Backward(gradTgtEmb)
-
-	return gradSrcInput, gradTgtInput
+	// The returned gradients for source and target embeddings are not strictly necessary for training
+	// but can be useful for debugging.
+	return gradSrcEmb, gradTgtEmb
 }
 
 // GetParameters returns all trainable parameters of the TransformerModel.
@@ -135,58 +145,66 @@ func Load(filePath string) (*TransformerModel, error) {
 
 // Generate performs greedy decoding to generate a target sequence.
 func (t *TransformerModel) Generate(srcInput [][]int, maxLen int) [][]int {
-	// Set model to evaluation mode
 	t.SetTraining(false)
+	batchSize := len(srcInput)
 
-	// Initialize target sequence with start token
-	tgtInput := make([][]int, len(srcInput))
-	for i := range srcInput {
+	// 1. Create source mask from the input
+	// This should be done once.
+	// Assuming a helper function to create padding mask from a batch.
+	// We'll create a dummy one for now if it doesn't exist.
+	srcMask := core.Zeros(batchSize, 1, len(srcInput[0])) // Placeholder
+
+	// 2. Initialize target sequence with the start token
+	tgtInput := make([][]int, batchSize)
+	for i := range tgtInput {
 		tgtInput[i] = []int{t.Config.StartToken}
 	}
 
-	// Create dummy masks for generation (no actual masking needed for greedy decoding here)
-	srcMask := core.Zeros(len(srcInput), 1, t.Config.MaxSeqLen)
-	tgtMask := core.Zeros(len(srcInput), t.Config.MaxSeqLen, t.Config.MaxSeqLen)
+	// 3. Iteratively generate tokens
+	for i := 0; i < maxLen; i++ {
+		// a. Create target mask for the current sequence length
+		tgtSeqLen := len(tgtInput[0])
+		lookAheadMask := core.GenerateLookAheadMask(tgtSeqLen)
+		// No padding in target yet, so padding mask is not strictly needed, but good practice
+		tgtPaddingMask := core.Zeros(batchSize, 1, tgtSeqLen)
+		tgtMask := core.CombineMasks(tgtPaddingMask, lookAheadMask)
 
-	// Iteratively generate tokens
-	for l := 0; l < maxLen; l++ {
-		// Forward pass to get logits for the next token
+		// b. Forward pass
 		logits, _, _, _ := t.Forward(srcInput, tgtInput, srcMask, tgtMask)
 
-		// Get the last token's logits
-		lastLogits := logits.Slice(0, logits.Shape()[0]).Reshape(len(srcInput), -1, t.Config.VocabSize)
-
-		// Select the token with the highest probability (greedy)
-		nextTokens := make([]int, len(srcInput))
-		for i := 0; i < len(srcInput); i++ {
-			row := lastLogits.Slice(i, i+1).Reshape(t.Config.VocabSize)
-			maxProb := -1.0
-			maxIdx := -1
-			for j, prob := range row.Data() {
-				if prob > maxProb {
-					maxProb = prob
-					maxIdx = j
-				}
-			}
-			nextTokens[i] = maxIdx
+		// c. Get logits for the last token of each sequence
+		// logits shape: (batchSize * tgtSeqLen, vocabSize)
+		// We need the logits for the last token of each sequence in the batch.
+		lastTokenLogits := core.NewTensor(batchSize, t.Config.VocabSize)
+		for b := 0; b < batchSize; b++ {
+			// Index of the last token's logits for batch item 'b'
+			logitIndex := (b*tgtSeqLen + tgtSeqLen) - 1
+			// Slice the logits for the last token
+			lastTokenLogits.SetRow(logits.Slice(logitIndex, logitIndex+1), b)
 		}
 
-		// Append the selected token to the target sequence
-		for i := range tgtInput {
-			tgtInput[i] = append(tgtInput[i], nextTokens[i])
-		}
+		// d. Select the token with the highest probability (greedy decoding)
+		// Assuming the tensor library has an Argmax function.
+		nextTokens := lastTokenLogits.Argmax(1) // Argmax along dimension 1 (the vocab dimension)
 
-		// Check for end token
-		isAllEnd := true
-		for _, token := range nextTokens {
-			if token != t.Config.EndToken {
-				isAllEnd = false
+		// e. Check if all sequences have generated the end token
+		allFinished := true
+		for _, token := range nextTokens.Data() {
+			if int(token) != t.Config.EndToken {
+				allFinished = false
 				break
 			}
 		}
-		if isAllEnd {
+		if allFinished {
 			break
 		}
+
+		// f. Append the new tokens to the target sequence for the next iteration
+		newTgtInput := make([][]int, batchSize)
+		for b := 0; b < batchSize; b++ {
+			newTgtInput[b] = append(tgtInput[b], int(nextTokens.Data()[b]))
+		}
+		tgtInput = newTgtInput
 	}
 
 	return tgtInput

@@ -233,6 +233,22 @@ func (t *Tensor) Set(value float64, indices ...int) {
 	t.data[t.flatIndex(indices)] = value
 }
 
+// SetRow sets a row in a 2D tensor.
+func (t *Tensor) SetRow(row *Tensor, index int) {
+	if t.Ndim() != 2 || row.Ndim() != 2 || row.shape[0] != 1 {
+		panic("SetRow is only implemented for setting a row in a 2D tensor with a 2D row tensor")
+	}
+	if t.shape[1] != row.shape[1] {
+		panic("row length mismatch")
+	}
+	if index < 0 || index >= t.shape[0] {
+		panic("row index out of bounds")
+	}
+
+	offset := index * t.strides[0]
+	copy(t.data[offset:offset+t.shape[1]], row.data)
+}
+
 // Slice extracts a slice from the tensor.
 func (t *Tensor) Slice(indices ...int) *Tensor {
 	// This is a simplified slice that only supports slicing along the first dimension.
@@ -264,6 +280,11 @@ func (t *Tensor) Add(other *Tensor) *Tensor {
 // Sub performs element-wise subtraction. Supports broadcasting. Returns a new tensor.
 func (t *Tensor) Sub(other *Tensor) *Tensor {
 	return t._elementWiseOp(other, func(a, b float64) float64 { return a - b }, false)
+}
+
+// Sub_ performs in-place element-wise subtraction.
+func (t *Tensor) Sub_(other *Tensor) {
+	t._elementWiseOp(other, func(a, b float64) float64 { return a - b }, true)
 }
 
 // Mul performs element-wise multiplication. Supports broadcasting. Returns a new tensor.
@@ -641,6 +662,50 @@ func (t *Tensor) Squeeze(axes ...int) *Tensor {
 	return t.Reshape(newShape...)
 }
 
+// ExpandAs broadcasts the tensor to a new shape.
+// The new shape must be compatible for broadcasting.
+// This is a simplified, data-copying implementation. A proper implementation would use strides.
+func (t *Tensor) ExpandAs(shape ...int) *Tensor {
+	if t.Ndim() > len(shape) {
+		panic(fmt.Sprintf("new shape must have at least as many dimensions as the original: %d vs %d", len(shape), t.Ndim()))
+	}
+
+	// Check if shapes are compatible for broadcasting
+	for i := 1; i <= t.Ndim(); i++ {
+		srcDim := t.shape[t.Ndim()-i]
+		tgtDim := shape[len(shape)-i]
+		if srcDim != tgtDim && srcDim != 1 {
+			panic(fmt.Sprintf("cannot broadcast shape %v to %v", t.shape, shape))
+		}
+	}
+
+	result := NewTensor(shape...)
+	resultIndices := make([]int, len(shape))
+	srcIndices := make([]int, t.Ndim())
+
+	for i := 0; i < result.size; i++ {
+		temp := i
+		for j := len(shape) - 1; j >= 0; j-- {
+			resultIndices[j] = temp % shape[j]
+			temp /= shape[j]
+		}
+
+		// Align from the right (trailing dimensions)
+		for j := 1; j <= t.Ndim(); j++ {
+			srcDimIdx := t.Ndim() - j
+			tgtDimIdx := len(shape) - j
+
+			if t.shape[srcDimIdx] == shape[tgtDimIdx] {
+				srcIndices[srcDimIdx] = resultIndices[tgtDimIdx]
+			} else {
+				srcIndices[srcDimIdx] = 0 // Broadcast from dimension of size 1
+			}
+		}
+		result.data[i] = t.Get(srcIndices...)
+	}
+	return result
+}
+
 // ExpandDims 在指定的 `axis` 位置插入一个大小为 1 的新维度。
 func (t *Tensor) ExpandDims(axis int) *Tensor {
 	dims := t.Ndim()
@@ -710,6 +775,34 @@ func (t *Tensor) Mean(axes ...int) *Tensor {
 	})
 }
 
+// Variance 计算张量元素的方差。
+// 如果不提供 `axes`，则计算所有元素的方差，返回一个标量张量。
+// 否则，沿指定的轴计算方差。
+func (t *Tensor) Variance(axes ...int) *Tensor {
+	mean := t.Mean(axes...)
+	var diff *Tensor
+
+	if len(axes) == 0 {
+		// Global variance
+		diff = t.Sub(mean) // Broadcasting a scalar
+	} else {
+		// Axis-wise variance
+		// We need to expand the mean tensor to match the original tensor's dimensions for subtraction.
+		expandedMean := mean
+		originalNdim := t.Ndim()
+		meanNdim := mean.Ndim()
+
+		// Add dimensions to the end of the mean shape until it matches the original number of dimensions
+		for i := 0; i < originalNdim-meanNdim; i++ {
+			expandedMean = expandedMean.ExpandDims(expandedMean.Ndim())
+		}
+		diff = t.Sub(expandedMean)
+	}
+
+	squaredDiff := diff.Mul(diff)
+	return squaredDiff.Mean(axes...)
+}
+
 // Max 找出张量中的最大值。
 // 如果不提供 `axes`，则找出所有元素中的最大值，返回一个标量张量。
 // 否则，沿指定的轴找出最大值。
@@ -736,6 +829,38 @@ func (t *Tensor) Max(axes ...int) *Tensor {
 		}
 		return max
 	})
+}
+
+// Argmax returns the indices of the maximum values along an axis.
+func (t *Tensor) Argmax(axis int) *Tensor {
+	if t.size == 0 {
+		panic("cannot compute argmax of an empty tensor")
+	}
+
+	// Simplified implementation for 2D tensors along axis 1
+	if t.Ndim() != 2 || axis != 1 {
+		panic("Argmax is only implemented for 2D tensors along axis 1")
+	}
+
+	rows := t.shape[0]
+	cols := t.shape[1]
+	result := NewTensor(rows)
+
+	for i := 0; i < rows; i++ {
+		maxVal := -math.MaxFloat64
+		maxIdx := -1
+		offset := i * t.strides[0]
+		for j := 0; j < cols; j++ {
+			val := t.data[offset+j]
+			if val > maxVal {
+				maxVal = val
+				maxIdx = j
+			}
+		}
+		result.data[i] = float64(maxIdx)
+	}
+
+	return result
 }
 
 // =================================================================================================

@@ -46,9 +46,10 @@ func (r *ResidualConnection) Backward(gradOutput *core.Tensor) (*core.Tensor, *c
 	gradAddedOutput := r.Norm.Backward(gradOutput)
 
 	// 2. Backward through Add
-	// Gradients are simply passed through for addition
-	gradX := gradAddedOutput
-	gradDroppedSubOutput := gradAddedOutput
+	// The gradient is distributed to both inputs of the addition.
+	// We clone to prevent accidental modification of the same tensor data.
+	gradX := gradAddedOutput.Clone()
+	gradDroppedSubOutput := gradAddedOutput.Clone()
 
 	// 3. Backward through Dropout
 	gradSublayer := r.Dropout.Backward(gradDroppedSubOutput)

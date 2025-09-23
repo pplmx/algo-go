@@ -11,8 +11,8 @@ type AdamOptimizer struct {
 	Beta2        float64
 	Epsilon      float64
 	t            int
-	m            *Tensor // First moment estimates
-	v            *Tensor // Second moment estimates
+	m            map[*Tensor]*Tensor // First moment estimates, per parameter
+	v            map[*Tensor]*Tensor // Second moment estimates, per parameter
 }
 
 // NewAdamOptimizer creates a new AdamOptimizer.
@@ -23,34 +23,36 @@ func NewAdamOptimizer(learningRate, beta1, beta2, epsilon float64) *AdamOptimize
 		Beta2:        beta2,
 		Epsilon:      epsilon,
 		t:            0,
+		m:            make(map[*Tensor]*Tensor),
+		v:            make(map[*Tensor]*Tensor),
 	}
 }
 
 // Update updates the parameters using the Adam optimization algorithm.
 func (a *AdamOptimizer) Update(param, grad *Tensor) {
-	if a.m == nil {
-		a.m = Zeros(param.Shape()...)
-		a.v = Zeros(param.Shape()...)
+	// Initialize moment estimates for this parameter if not already present
+	if _, ok := a.m[param]; !ok {
+		a.m[param] = Zeros(param.Shape()...)
+		a.v[param] = Zeros(param.Shape()...)
 	}
 
 	a.t++
 
 	// Update biased first moment estimate
-	a.m = a.m.MulScalar(a.Beta1).Add(grad.MulScalar(1 - a.Beta1))
+	a.m[param] = a.m[param].MulScalar(a.Beta1).Add(grad.MulScalar(1 - a.Beta1))
 
 	// Update biased second raw moment estimate
-	a.v = a.v.MulScalar(a.Beta2).Add(grad.Power(2).MulScalar(1 - a.Beta2))
+	a.v[param] = a.v[param].MulScalar(a.Beta2).Add(grad.Power(2).MulScalar(1 - a.Beta2))
 
 	// Compute bias-corrected first moment estimate
-	mHat := a.m.DivScalar(1 - math.Pow(a.Beta1, float64(a.t)))
+	mHat := a.m[param].DivScalar(1 - math.Pow(a.Beta1, float64(a.t)))
 
 	// Compute bias-corrected second raw moment estimate
-	vHat := a.v.DivScalar(1 - math.Pow(a.Beta2, float64(a.t)))
+	vHat := a.v[param].DivScalar(1 - math.Pow(a.Beta2, float64(a.t)))
 
-	// Update parameters in place
-	for i := 0; i < param.Size(); i++ {
-		param.data[i] -= a.LearningRate * mHat.data[i] / (math.Sqrt(vHat.data[i]) + a.Epsilon)
-	}
+	// Update parameters
+	update := mHat.Div(vHat.Sqrt().AddScalar(a.Epsilon))
+	param.Sub_(update.MulScalar(a.LearningRate))
 }
 
 func (a *AdamOptimizer) GetParameters() []*Tensor {

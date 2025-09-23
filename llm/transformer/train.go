@@ -25,60 +25,61 @@ func NewTrainer(model *TransformerModel, optimizer *core.AdamOptimizer, lossFunc
 	}
 }
 
-// Train 执行训练循环
-func (t *Trainer) Train(loader *DataLoader) {
-	t.Model.SetTraining(true)
+// Train 执行完整的训练循环。
+func (t *Trainer) Train(loader *DataLoader) []float64 {
+	t.Model.SetTraining(true) // 将模型设置为训练模式（启用 dropout 等）
+	lossHistory := []float64{}
 
 	for epoch := 1; epoch <= t.Config.Train.NumEpochs; epoch++ {
-		loader.Reset()
+		loader.Reset() // 在每个 epoch 开始时重置并打乱数据加载器
 		totalLoss := 0.0
 		batchCount := 0
 
 		for loader.HasNextBatch() {
-			srcBatch, tgtBatch, srcPaddingMask, _ := loader.NextBatch()
+			// 从数据加载器获取一个批次的数据和掩码
+			srcBatch, tgtBatch, srcPaddingMask, tgtPaddingMask := loader.NextBatch()
 
-			// 创建目标序列的输入和实际目标
-			// tgtInput 是实际输入到解码器的序列 (通常是目标序列去掉最后一个token，并加上起始token)
-			// targets 是用于计算损失的实际目标 (通常是目标序列去掉第一个token)
-			tgtInput := make([][]int, len(tgtBatch))
+			// 1. 准备解码器的输入和目标序列
+			// 对于一个目标序列 [t1, t2, t3, end],
+			// 解码器输入应该是 [start, t1, t2, t3]
+			// 真实目标应该是   [t1, t2, t3, end]
+			seqLen := len(tgtBatch[0])
+			decoderInput := make([][]int, len(tgtBatch))
 			targets := make([][]int, len(tgtBatch))
 			for i, seq := range tgtBatch {
-				tgtInput[i] = make([]int, len(seq))
-				targets[i] = make([]int, len(seq))
-				// 假设起始 token 是 1, 结束 token 是 2
-				tgtInput[i][0] = t.Config.Transformer.StartToken
-				copy(tgtInput[i][1:], seq[:len(seq)-1])
+				decoderInput[i] = make([]int, seqLen)
+				targets[i] = make([]int, seqLen)
+				decoderInput[i][0] = t.Config.Transformer.StartToken // 添加起始符
+				copy(decoderInput[i][1:], seq[:seqLen-1])
 				copy(targets[i], seq[1:])
+				targets[i][seqLen-1] = t.Config.Transformer.EndToken // 确保最后一个是结束符
 			}
 
-			// 生成前瞻掩码 (Look-ahead Mask)
-			// 这是一个上三角矩阵，用于防止解码器在训练时看到未来的 token
-			lookAheadMask := core.GenerateLookAheadMask(len(tgtInput[0]))
-
-			// 合并填充掩码和前瞻掩码
-			// tgtMask 应该同时包含填充信息和前瞻信息
-			tgtPaddingMask := loader.generatePaddingMask(tgtBatch) // Re-generate for clarity, though it's already returned by NextBatch
+			// 2. 创建目标序列的组合掩码
+			// a. 创建前瞻掩码 (look-ahead mask) 防止解码器看到未来的 token
+			lookAheadMask := core.GenerateLookAheadMask(seqLen)
+			// b. 与填充掩码 (padding mask) 合并
 			combinedTgtMask := core.CombineMasks(tgtPaddingMask, lookAheadMask)
 
-			// 前向传播
-			logits, _, _, _ := t.Model.Forward(srcBatch, tgtInput, srcPaddingMask, combinedTgtMask)
+			// 3. 将模型中所有参数的梯度清零
+			t.Model.ZeroGradients()
 
-			// 计算损失
+			// 4. 执行前向传播
+			logits, _, _, _ := t.Model.Forward(srcBatch, decoderInput, srcPaddingMask, combinedTgtMask)
+
+			// 5. 计算损失
 			loss := t.LossFunc.Forward(logits, targets)
 			totalLoss += loss
 
-			// 反向传播
-			// gradLoss := t.LossFunc.Backward(logits, targets)
-			// gradModelInput, _ := t.Model.Backward(gradLoss)
+			// 6. 执行反向传播
+			// a. 计算损失函数关于 logits 的梯度
+			gradLoss := t.LossFunc.Backward(logits, targets)
+			// b. 将梯度反向传播到整个模型，计算所有参数的梯度
+			t.Model.Backward(gradLoss)
 
-			// 更新模型参数
+			// 7. 使用优化器更新模型参数
 			params := t.Model.GetParameters()
 			grads := t.Model.GetGradients()
-
-			// Zero out gradients before updating
-			t.Model.ZeroGradients()
-
-			// Update parameters
 			for i := range params {
 				t.Optimizer.Update(params[i], grads[i])
 			}
@@ -88,5 +89,7 @@ func (t *Trainer) Train(loader *DataLoader) {
 
 		avgLoss := totalLoss / float64(batchCount)
 		fmt.Printf("Epoch %d, Average Loss: %.4f\n", epoch, avgLoss)
+		lossHistory = append(lossHistory, avgLoss)
 	}
+	return lossHistory
 }

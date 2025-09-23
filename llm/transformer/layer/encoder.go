@@ -62,9 +62,33 @@ func (t *TransformerEncoderLayer) Forward(x *core.Tensor, mask *core.Tensor) (*c
 }
 
 // Backward performs the backward pass for the TransformerEncoderLayer.
+// It computes the gradient of the loss with respect to the layer's input.
 func (t *TransformerEncoderLayer) Backward(gradOutput *core.Tensor) *core.Tensor {
-	// This is a simplified placeholder. A real implementation would be more complex.
-	gradX := core.Zeros(t.lastX.Shape()...)
+	// The forward pass is: y = FFNResidual(x1, FFN(x1)) where x1 = AttnResidual(x, SelfAttn(x))
+	// We backpropagate through this structure in reverse.
+
+	// 1. Backpropagate through the second residual connection (FFNResidual).
+	// This gives us the gradient for x1 (from the residual path) and for the FFN output.
+	gradX1_from_ffn, gradFFNOutput := t.FFNResidual.Backward(gradOutput)
+
+	// 2. Backpropagate through the FeedForwardNetwork.
+	// This gives us the gradient for x1 (from the FFN path).
+	gradX1_from_ffn_layer := t.FFN.Backward(gradFFNOutput)
+
+	// 3. Sum the gradients for x1 from its two usages (residual path and FFN path).
+	gradX1 := gradX1_from_ffn.Add(gradX1_from_ffn_layer)
+
+	// 4. Backpropagate through the first residual connection (AttnResidual).
+	// This gives us the gradient for x (from the residual path) and for the Self-Attention output.
+	gradX_from_attn, gradAttnOutput := t.AttnResidual.Backward(gradX1)
+
+	// 5. Backpropagate through the MultiHeadAttention layer.
+	// Since Q, K, and V inputs are all from x, we get three gradients which must be summed.
+	gradX_from_q, gradX_from_k, gradX_from_v := t.SelfAttn.Backward(gradAttnOutput)
+
+	// 6. Sum all gradients for x from its four usages (residual path, Q, K, and V).
+	gradX := gradX_from_attn.Add(gradX_from_q).Add(gradX_from_k).Add(gradX_from_v)
+
 	return gradX
 }
 
@@ -157,9 +181,26 @@ func (t *TransformerEncoder) Forward(srcInput [][]int, mask *core.Tensor) (*core
 
 // Backward performs the backward pass for the TransformerEncoder.
 func (t *TransformerEncoder) Backward(gradOutput *core.Tensor) *core.Tensor {
-	// This is a simplified placeholder. A real implementation would be more complex.
-	gradInput := core.Zeros(t.lastEncoded.Shape()...)
-	return gradInput
+	currentGrad := gradOutput
+
+	// 1. Backpropagate through the layers in reverse order
+	for i := len(t.Layers) - 1; i >= 0; i-- {
+		layer := t.Layers[i]
+		currentGrad = layer.Backward(currentGrad)
+	}
+
+	// At this point, currentGrad is the gradient with respect to the output of PosEnc
+
+	// 2. Backpropagate through PositionalEncoding
+	gradEmb := t.PosEnc.Backward(currentGrad)
+
+	// 3. Backpropagate through the source embedding layer.
+	// This will calculate the gradients for the embedding weights.
+	// The return value is typically nil as we don't backpropagate to the integer token IDs.
+	t.SrcEmbedding.Backward(gradEmb)
+
+	// We return the gradient w.r.t the embedding output, which can be used for debugging or other purposes.
+	return gradEmb
 }
 
 // GetParameters returns the trainable parameters of the TransformerEncoder.

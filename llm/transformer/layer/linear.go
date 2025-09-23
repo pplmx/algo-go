@@ -43,7 +43,8 @@ func (l *LinearLayer) Backward(gradOutput *core.Tensor) *core.Tensor {
 
 	// Calculate gradient with respect to bias
 	if l.UseBias {
-		l.gradBias = gradOutput.Sum(0) // Sum along the batch dimension
+		gradB := gradOutput.Sum(0) // Sum along the batch dimension, result is (out_features)
+		l.gradBias = gradB.Reshape(1, -1) // Reshape to (1, out_features) to match bias shape
 	}
 
 	// Calculate gradient with respect to input

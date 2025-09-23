@@ -7,7 +7,7 @@ type LayerNorm struct {
 
 	lastInput           *Tensor
 	lastMean            []float64
-	lastVariance        []float64
+	lastVariance        *Tensor
 	lastNormalizedInput *Tensor
 
 	gradGamma *Tensor
@@ -26,32 +26,65 @@ func NewLayerNorm(dModel int, eps float64) *LayerNorm {
 // Forward performs the forward pass for the LayerNorm layer.
 func (l *LayerNorm) Forward(x *Tensor, args ...interface{}) *Tensor {
 	l.lastInput = x
-	return x.LayerNorm(l.Gamma, l.Beta, l.Eps)
+
+	// Calculate mean and variance along the last dimension
+	mean := x.Mean(x.Ndim() - 1)
+	variance := x.Variance(x.Ndim() - 1)
+
+	// Keep for backward pass
+	l.lastMean = mean.Data()
+	l.lastVariance = variance
+
+	// Normalize
+	mean_expanded := mean.ExpandDims(mean.Ndim())
+	variance_expanded := variance.AddScalar(l.Eps).Sqrt().ExpandDims(variance.Ndim())
+	normalized := x.Sub(mean_expanded).Div(variance_expanded)
+	l.lastNormalizedInput = normalized
+
+	// Scale and shift
+	output := normalized.Mul(l.Gamma.ExpandAs(x.Shape()...)).Add(l.Beta.ExpandAs(x.Shape()...))
+
+	return output
 }
 
 // Backward performs the backward pass for the LayerNorm layer.
+// It computes the gradients with respect to the input x, and the learnable parameters gamma and beta.
+// The implementation is based on the formulas derived from the chain rule, as detailed in various online resources.
+// See: https://robotchinwag.com/posts/layer-normalization-deriving-the-gradient-for-the-backward-pass/
 func (l *LayerNorm) Backward(gradOutput *Tensor) *Tensor {
-	// Simplified backward pass for LayerNorm. A full, correct implementation is complex.
-	// This is a placeholder that might not be numerically correct.
-	// For a real implementation, you'd need to derive the gradients with respect to
-	// the input, gamma, and beta.
+	hiddenSize := l.lastInput.Shape()[1]
+	H := float64(hiddenSize)
 
-	// Gradient w.r.t. gamma and beta
-	// dL/dGamma = sum(dL/dY * normalized_input) over the batch
-	// dL/dBeta = sum(dL/dY) over the batch
+	// Restore intermediate values from the forward pass
+	normalizedInput := l.lastNormalizedInput
+	sigma := l.lastVariance.AddScalar(l.Eps).Sqrt()                 // Shape (B, S)
+	sigma_expanded := sigma.ExpandDims(sigma.Ndim())                 // Shape (B, S, 1)
+	mu := normalizedInput.Mul(sigma_expanded)                        // Shape (B, S, D)
 
-	// For simplicity, we'll assume the gradients for gamma and beta are just the sum of gradOutput.
-	// This is NOT correct but avoids a panic.
-	if l.gradGamma == nil || l.gradGamma.Size() != l.Gamma.Size() {
-		l.gradGamma = Zeros(l.Gamma.Shape()...)
-	}
-	if l.gradBeta == nil || l.gradBeta.Size() != l.Beta.Size() {
-		l.gradBeta = Zeros(l.Beta.Shape()...)
-	}
+	// 1. Calculate gradients for the learnable parameters gamma and beta.
+	l.gradGamma = gradOutput.Mul(normalizedInput).Sum(0)
+	l.gradBeta = gradOutput.Sum(0)
 
-	// This is a placeholder for the actual gradient calculation
-	// A proper implementation would involve the chain rule through the normalization.
-	gradInput := gradOutput.Clone() // Placeholder
+	// 2. Calculate the gradient for the input x (dL/dx).
+	gamma_expanded := l.Gamma.ExpandAs(gradOutput.Shape()...)
+
+	// Term 1: The direct path from the output through the scaling by gamma and sigma.
+	term1 := gradOutput.Mul(gamma_expanded).Div(sigma_expanded)
+
+	// Term 2: The path through the mean.
+	term2_sum := term1.Sum(1) // Shape (B, D)
+	term2_sum_expanded := term2_sum.ExpandDims(1) // Shape (B, 1, D)
+	term2 := term2_sum_expanded.ExpandAs(term1.Shape()...).MulScalar(-1.0 / H)
+
+	// Term 3: The path through the variance.
+	sigma3_expanded := sigma_expanded.Power(3)
+	term3_sum_inner := gradOutput.Mul(gamma_expanded).Mul(mu).Div(sigma3_expanded)
+	term3_sum := term3_sum_inner.Sum(1) // Shape (B, D)
+	term3_sum_expanded := term3_sum.ExpandDims(1) // Shape (B, 1, D)
+	term3 := mu.Mul(term3_sum_expanded.ExpandAs(mu.Shape()...)).MulScalar(-1.0 / H)
+
+	// The final gradient is the sum of these three terms.
+	gradInput := term1.Add(term2).Add(term3)
 
 	return gradInput
 }

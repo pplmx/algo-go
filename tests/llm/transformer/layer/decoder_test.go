@@ -39,10 +39,8 @@ func TestTransformerDecoderLayer_Forward(t *testing.T) {
 		10, 12, 14, 16, 18, 11, 13, 15,
 	}
 	encoderOutput := core.NewTensorFromData(encoderOutputData, batchSize, seqLen, cfg.DModel)
-	srcMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
-	srcMask := core.NewTensorFromData(srcMaskData, batchSize, 1, seqLen, seqLen)
-	tgtMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
-	tgtMask := core.NewTensorFromData(tgtMaskData, batchSize, 1, seqLen, seqLen)
+	srcMask := core.Zeros(batchSize, 1, 1, seqLen)
+	tgtMask := core.Zeros(batchSize, 1, seqLen, seqLen)
 
 	// 4. 执行前向传播
 	output, selfAttnWeights, encDecAttnWeights := decoderLayer.Forward(x, encoderOutput, srcMask, tgtMask)
@@ -102,12 +100,10 @@ func TestTransformerDecoder_Forward(t *testing.T) {
 			encoderOutputData[i*cfg.DModel+j] = float64(i*cfg.DModel + j)
 		}
 	}
-	encoderOutput := core.NewTensorFromData(encoderOutputData, batchSize*seqLen, cfg.DModel)
+	encoderOutput := core.NewTensorFromData(encoderOutputData, batchSize, seqLen, cfg.DModel)
 
-	srcMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
-	srcMask := core.NewTensorFromData(srcMaskData, batchSize*seqLen, batchSize*seqLen)
-	tgtMaskData := make([]float64, batchSize*seqLen*batchSize*seqLen)
-	tgtMask := core.NewTensorFromData(tgtMaskData, batchSize*seqLen, batchSize*seqLen)
+	srcMask := core.Zeros(batchSize, 1, 1, seqLen)
+	tgtMask := core.Zeros(batchSize, 1, seqLen, seqLen)
 
 	// 4. 执行前向传播
 	output, allSelfAttnWeights, allEncDecAttnWeights := decoder.Forward(tgtInput, encoderOutput, srcMask, tgtMask)

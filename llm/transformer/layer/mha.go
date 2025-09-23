@@ -20,6 +20,7 @@ type MultiHeadAttention struct {
 	lastKHeads       []*core.Tensor
 	lastVHeads       []*core.Tensor
 	lastOutputs      []*core.Tensor
+	lastAttnWeights  []*core.Tensor
 	lastConcatOutput *core.Tensor
 }
 
@@ -67,39 +68,55 @@ func (m *MultiHeadAttention) Forward(qInput, kInput, vInput *core.Tensor, mask *
 	qHeads := m.splitHeads(m.lastQ)
 	kHeads := m.splitHeads(m.lastK)
 	vHeads := m.splitHeads(m.lastV)
+	m.lastQHeads, m.lastKHeads, m.lastVHeads = qHeads, kHeads, vHeads // Save for backward pass
 
 	// 计算每个头的注意力
 	outputs := make([]*core.Tensor, m.Config.NumHeads)
 	weights := make([]*core.Tensor, m.Config.NumHeads)
 
 	// --- 掩码处理 ---
-	// MHA 需要一个形状为 (batch * num_heads, seq_len, seq_len) 的掩码，以便为每个头部分配。
-	// 然而，传入的掩码可能有两种形式：
-	// 1. (batch, 1, seq, seq): 广播掩码，所有头共享同一个掩码。
-	// 2. (batch, num_heads, seq, seq): 每个头有单独的预计算掩码。
-	//
-	// 下面的逻辑将这两种情况统一处理：
-	// 如果是情况1，我们手动将其“平铺”(tile)成情况2的形状。
-	if mask != nil && len(mask.Shape()) == 4 && mask.Shape()[1] == 1 {
+	// MHA的注意力分数形状为 (B, H, S, S).
+	// 输入的掩码 `mask` 有多种可能形状，这里统一处理成 (B, H, S, S).
+	if mask != nil {
 		numHeads := m.Config.NumHeads
-		seqLen := mask.Shape()[2]
+		qSeqLen := qInput.Shape()[1] // Q的序列长度决定了掩码的尺寸
 
-		// Create a new tiled mask.
-		tiledMaskData := make([]float64, batchSize*numHeads*seqLen*seqLen)
-		originalMaskData := mask.Data()
-
-		for b := 0; b < batchSize; b++ {
-			for h := 0; h < numHeads; h++ {
-				for s1 := 0; s1 < seqLen; s1++ {
-					for s2 := 0; s2 < seqLen; s2++ {
-						srcIdx := b*mask.Strides()[0] + 0*mask.Strides()[1] + s1*mask.Strides()[2] + s2*mask.Strides()[3]
-						destIdx := b*(numHeads*seqLen*seqLen) + h*(seqLen*seqLen) + s1*seqLen + s2
-						tiledMaskData[destIdx] = originalMaskData[srcIdx]
+		// Case 1: 4D padding mask (B, 1, 1, S_k) from encoder
+		if len(mask.Shape()) == 4 && mask.Shape()[1] == 1 && mask.Shape()[2] == 1 {
+			kSeqLen := mask.Shape()[3]
+			tiledMask := core.NewTensor(batchSize, numHeads, qSeqLen, kSeqLen)
+			for b := 0; b < batchSize; b++ {
+				for h := 0; h < numHeads; h++ {
+					for s1 := 0; s1 < qSeqLen; s1++ {
+						for s2 := 0; s2 < kSeqLen; s2++ {
+							padVal := mask.Get(b, 0, 0, s2)
+							if padVal != 0 {
+								tiledMask.Set(padVal, b, h, s1, s2)
+							}
+						}
 					}
 				}
 			}
+			mask = tiledMask
+		} else if len(mask.Shape()) == 4 && mask.Shape()[1] == 1 {
+			// Case 2: 4D combined mask (B, 1, S_q, S_k) from decoder self-attention
+			qSeqLen := mask.Shape()[2]
+			kSeqLen := mask.Shape()[3]
+			tiledMask := core.NewTensor(batchSize, numHeads, qSeqLen, kSeqLen)
+			for b := 0; b < batchSize; b++ {
+				for h := 0; h < numHeads; h++ {
+					for s1 := 0; s1 < qSeqLen; s1++ {
+						for s2 := 0; s2 < kSeqLen; s2++ {
+							val := mask.Get(b, 0, s1, s2)
+							if val != 0 {
+								tiledMask.Set(val, b, h, s1, s2)
+							}
+						}
+					}
+				}
+			}
+			mask = tiledMask
 		}
-		mask = core.NewTensorFromData(tiledMaskData, batchSize, numHeads, seqLen, seqLen)
 	}
 
 	var headMask *core.Tensor
@@ -120,6 +137,7 @@ func (m *MultiHeadAttention) Forward(qInput, kInput, vInput *core.Tensor, mask *
 		outputs[i], weights[i] = m.Attention.Forward(qHeads[i], kHeads[i], vHeads[i], headMask)
 	}
 	m.lastOutputs = outputs
+	m.lastAttnWeights = weights // Save attention weights for backward pass
 
 	// 合并多头输出
 	concatOutput := m.concatHeads(outputs)
@@ -196,12 +214,102 @@ func (m *MultiHeadAttention) concatHeads(heads []*core.Tensor) *core.Tensor {
 	return core.NewTensorFromData(finalData, batchSize, seqLen, totalDV)
 }
 
+// splitGradsToHeads splits the gradient tensor back into gradients for each head.
+// It's the reverse operation of concatHeads.
+// grad is the gradient w.r.t the concatenated output, shape (batchSize, seqLen, totalDV)
+func (m *MultiHeadAttention) splitGradsToHeads(grad *core.Tensor) []*core.Tensor {
+	batchSize := grad.Shape()[0]
+	seqLen := grad.Shape()[1]
+	totalDV := grad.Shape()[2]
+	dHead := totalDV / m.Config.NumHeads
+	numHeads := m.Config.NumHeads
+
+	gradHeads := make([]*core.Tensor, numHeads)
+
+	// Pre-calculate strides for efficiency
+	gradStride0 := grad.Strides()[0]
+	gradStride1 := grad.Strides()[1]
+
+	for h := 0; h < numHeads; h++ {
+		// Create a new tensor for each head's gradient
+		headData := make([]float64, batchSize*seqLen*dHead)
+		headStride0 := seqLen * dHead
+		headStride1 := dHead
+
+		for i := 0; i < batchSize; i++ {
+			for j := 0; j < seqLen; j++ {
+				// Calculate the source offset in the concatenated gradient tensor
+				srcOffset := i*gradStride0 + j*gradStride1 + h*dHead
+				// Calculate the destination offset in the individual head's gradient tensor
+				destOffset := i*headStride0 + j*headStride1
+				// Copy the relevant slice of the gradient
+				copy(headData[destOffset:destOffset+dHead], grad.Data()[srcOffset:srcOffset+dHead])
+			}
+		}
+		gradHeads[h] = core.NewTensorFromData(headData, batchSize, seqLen, dHead)
+	}
+	return gradHeads
+}
+
+// combineGradHeads combines the gradient heads back into a single tensor.
+// It's the reverse of splitHeads.
+func (m *MultiHeadAttention) combineGradHeads(gradHeads []*core.Tensor) *core.Tensor {
+	// This is essentially the same as concatHeads
+	return m.concatHeads(gradHeads)
+}
+
 // Backward performs the backward pass for the MultiHeadAttention module.
+// It computes the gradients with respect to the inputs Q, K, and V.
+// The process is the reverse of the forward pass, applying the chain rule at each step.
 func (m *MultiHeadAttention) Backward(gradOutput *core.Tensor) (*core.Tensor, *core.Tensor, *core.Tensor) {
-	// This is a simplified placeholder. A real implementation would be more complex.
-	gradQInput := m.WQ.Backward(core.Zeros(m.lastQ.Shape()...))
-	gradKInput := m.WK.Backward(core.Zeros(m.lastK.Shape()...))
-	gradVInput := m.WV.Backward(core.Zeros(m.lastV.Shape()...))
+	batchSize := gradOutput.Shape()[0]
+	seqLen := gradOutput.Shape()[1]
+
+	// Step 1: Backpropagate through the final linear layer WO.
+	// The gradient `gradOutput` is first reshaped to match the output of WO.
+	reshapedGradOutput := gradOutput.Reshape(batchSize*seqLen, m.Config.DModel)
+	gradConcatOutputReshaped := m.WO.Backward(reshapedGradOutput)
+	gradConcatOutput := gradConcatOutputReshaped.Reshape(batchSize, seqLen, m.Config.DV)
+
+	// Step 2: Split the gradient for each head. This is the reverse of `concatHeads`.
+	gradHeadOutputs := m.splitGradsToHeads(gradConcatOutput)
+
+	// Initialize slices to hold gradients for Q, K, V from each head.
+	gradQHeads := make([]*core.Tensor, m.Config.NumHeads)
+	gradKHeads := make([]*core.Tensor, m.Config.NumHeads)
+	gradVHeads := make([]*core.Tensor, m.Config.NumHeads)
+
+	// Step 3: Backpropagate through ScaledDotProductAttention for each head.
+	for i := 0; i < m.Config.NumHeads; i++ {
+		// Restore the state (Q, K, V, weights) of the attention module for the backward pass of the current head.
+		m.Attention.LastQuery = m.lastQHeads[i]
+		m.Attention.LastKey = m.lastKHeads[i]
+		m.Attention.LastValue = m.lastVHeads[i]
+		m.Attention.LastWeights = m.lastAttnWeights[i]
+
+		gradQHeads[i], gradKHeads[i], gradVHeads[i] = m.Attention.Backward(gradHeadOutputs[i])
+	}
+
+	// Step 4: Combine the gradient heads back into single tensors. This is the reverse of `splitHeads`.
+	gradQ := m.combineGradHeads(gradQHeads)
+	gradK := m.combineGradHeads(gradKHeads)
+	gradV := m.combineGradHeads(gradVHeads)
+
+	// Step 5: Reshape gradients to match the output shape of the initial linear layers (WQ, WK, WV).
+	reshapedGradQ := gradQ.Reshape(batchSize*seqLen, m.Config.DK)
+	reshapedGradK := gradK.Reshape(batchSize*seqLen, m.Config.DK)
+	reshapedGradV := gradV.Reshape(batchSize*seqLen, m.Config.DV)
+
+	// Step 6: Backpropagate through the initial linear layers WQ, WK, WV.
+	gradQInputReshaped := m.WQ.Backward(reshapedGradQ)
+	gradKInputReshaped := m.WK.Backward(reshapedGradK)
+	gradVInputReshaped := m.WV.Backward(reshapedGradV)
+
+	// Step 7: Reshape the final gradients to match the original input shapes.
+	gradQInput := gradQInputReshaped.Reshape(batchSize, seqLen, m.Config.DModel)
+	gradKInput := gradKInputReshaped.Reshape(batchSize, seqLen, m.Config.DModel)
+	gradVInput := gradVInputReshaped.Reshape(batchSize, seqLen, m.Config.DModel)
+
 	return gradQInput, gradKInput, gradVInput
 }
 

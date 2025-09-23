@@ -95,16 +95,17 @@ func (dl *DataLoader) padBatch(batch [][]int, maxLen int) [][]int {
 	return paddedBatch
 }
 
-// generatePaddingMask 生成填充掩码
+// generatePaddingMask 生成填充掩码，形状为 (batch, 1, 1, seq_len)
+// 这样它就可以被广播到 (batch, num_heads, seq_len, seq_len) 的注意力分数张量上。
 func (dl *DataLoader) generatePaddingMask(batch [][]int) *core.Tensor {
 	batchSize := len(batch)
 	seqLen := len(batch[0])
-	mask := core.Zeros(batchSize, 1, seqLen)
+	mask := core.Zeros(batchSize, 1, 1, seqLen)
 
 	for i := 0; i < batchSize; i++ {
 		for j := 0; j < seqLen; j++ {
 			if batch[i][j] == dl.Dataset.Config.PadToken {
-				mask.Set(-math.MaxFloat64, i, 0, j)
+				mask.Set(-math.MaxFloat64, i, 0, 0, j)
 			}
 		}
 	}

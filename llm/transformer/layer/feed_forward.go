@@ -39,13 +39,18 @@ func (f *FeedForwardNetwork) Forward(x *core.Tensor) *core.Tensor {
 	reshapedX := x.Reshape(batchSize*seqLen, f.dModel)
 
 	// First linear layer
-	intermediate := f.fc1.Forward(reshapedX)
+	h := f.fc1.Forward(reshapedX)
+	f.lastH = h // Save for backward pass
 
 	// Activation
-	intermediate = intermediate.ReLU()
+	reluOutput := h.ReLU()
+	f.lastReLUOutput = reluOutput // Save for backward pass
+
+	// Dropout
+	droppedOutput := f.dropout.Forward(reluOutput)
 
 	// Second linear layer
-	output := f.fc2.Forward(intermediate)
+	output := f.fc2.Forward(droppedOutput)
 
 	// Reshape back
 	output = output.Reshape(batchSize, seqLen, f.dModel)
@@ -55,22 +60,33 @@ func (f *FeedForwardNetwork) Forward(x *core.Tensor) *core.Tensor {
 
 // Backward performs the backward pass for the FeedForwardNetwork layer.
 func (f *FeedForwardNetwork) Backward(gradOutput *core.Tensor) *core.Tensor {
+	batchSize := gradOutput.Shape()[0]
+	seqLen := gradOutput.Shape()[1]
+
+	// Reshape gradOutput to match the output of fc2
+	reshapedGradOutput := gradOutput.Reshape(batchSize*seqLen, f.dModel)
+
 	// 1. Backward through fc2
-	gradDropped := f.fc2.Backward(gradOutput)
+	gradDropped := f.fc2.Backward(reshapedGradOutput)
 
 	// 2. Backward through dropout
 	gradReLUOutput := f.dropout.Backward(gradDropped)
 
 	// 3. Backward through ReLU
 	gradH := gradReLUOutput.Clone()
-	for i, val := range f.lastReLUOutput.Data() {
+	// The gradient of ReLU is 1 for input > 0, and 0 otherwise.
+	// We apply this to the incoming gradient gradReLUOutput.
+	for i, val := range f.lastH.Data() {
 		if val <= 0 {
 			gradH.Data()[i] = 0
 		}
 	}
 
 	// 4. Backward through fc1
-	gradInput := f.fc1.Backward(gradH)
+	gradInputReshaped := f.fc1.Backward(gradH)
+
+	// 5. Reshape gradInput back to the original input shape
+	gradInput := gradInputReshaped.Reshape(batchSize, seqLen, f.dModel)
 
 	return gradInput
 }
